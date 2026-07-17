@@ -1,0 +1,53 @@
+name: Bug report
+description: 报告可复现的错误或回归
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告问题。安全漏洞请使用仓库 Security 页面私下报告，不要填写此表单。
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: 版本号、commit SHA 或镜像 tag
+      placeholder: v1.2.3 / abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: 操作系统、Python/Node/Docker 版本及相关部署方式
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: 提供最小配置和可重复执行的步骤，请删除所有真实凭据
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: 附上已脱敏的错误、堆栈或截图
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: I removed secrets, tokens, and personal data.
+          required: true
