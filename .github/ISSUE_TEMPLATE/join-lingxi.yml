@@ -1,0 +1,42 @@
+name: Join LingXi / 加入我们
+description: 选择一个你想参与的方向，和我们一起把 LingxiLearn 做得更好
+title: "[Join LingXi]: "
+labels: ["community", "join"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 欢迎加入 LingXi 👋
+
+        不需要简历，也不需要长篇自我介绍。选择一个最接近你的方向，剩下的我们在 Issue 里聊。
+
+        > GitHub 用户名会自动显示在 Issue 中，请不要填写邮箱、手机号、Token 或其他敏感信息。
+  - type: dropdown
+    id: path
+    attributes:
+      label: 你想从哪里开始？
+      description: 选一个最想尝试的方向；之后可以调整。
+      options:
+        - 开发 LingxiLearn：前端、后端、Agent、测试
+        - 设计学习体验：交互、视觉、产品
+        - 共建课程内容：计算机网络及其他工科课程
+        - 文档、示例与社区运营
+        - 体验产品并提供反馈
+        - 我还不确定，想先了解一下
+    validations:
+      required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: 想一起做什么？（可选）
+      description: 一句话就好：你感兴趣的主题、正在做的项目，或希望先了解的内容。
+      placeholder: 例如：我想帮忙改进 TCP 课程中的交互任务。
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 最后确认
+      options:
+        - label: 我已阅读并愿意遵守 LingXi 的社区行为准则。
+          required: true
