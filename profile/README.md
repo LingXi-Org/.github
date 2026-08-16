@@ -2,93 +2,72 @@
 
 # LingXi · 灵犀
 
-### Learning experiences and reliable infrastructure for the next generation of builders
+**Open-source infrastructure and learning experiences for reliable AI products.**
 
-让 AI 学习从“给出答案”走向理解状态、动手实践、验证掌握，并留下可回溯的学习证据。
+让 AI 不只回答问题，而是理解状态、调用能力、持续执行，并根据结果决定下一步。
 
-[![Focus](https://img.shields.io/badge/Focus-AI_Learning-5B5BD6?style=flat-square)](https://github.com/LingXi-Org/LingxiLearn)
-[![Featured](https://img.shields.io/badge/Featured-LingxiLearn-FFB000?style=flat-square)](https://github.com/LingXi-Org/LingxiLearn)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://github.com/LingXi-Org/LingxiGraph)
-[![Open Source](https://img.shields.io/badge/Open_Source-Build_in_Public-2EA44F?style=flat-square&logo=github&logoColor=white)](https://github.com/orgs/LingXi-Org/repositories)
+**Everything is a Skill. State decides next.**
 
-[进入 LingxiLearn](https://github.com/LingXi-Org/LingxiLearn) ·
-[Join LingXi / 加入我们](https://github.com/LingXi-Org/.github/issues/new?template=join-lingxi.yml) ·
+[灵犀智学 LingxiLearn](https://github.com/LingXi-Org/LingxiLearn) ·
 [项目列表](https://github.com/orgs/LingXi-Org/repositories) ·
-[贡献指南](https://github.com/LingXi-Org/.github/blob/main/CONTRIBUTING.md)
+[Join LingXi / 加入我们](https://github.com/LingXi-Org/.github/issues/new?template=join-lingxi.yml)
 
 </div>
 
----
+## What we build
 
-## Featured project · LingxiLearn
+LingXi 是一个围绕 **AI 学习产品、Agent 运行时、可复用能力与身份基础设施** 构建的开源项目组。
 
-**[LingxiLearn](https://github.com/LingXi-Org/LingxiLearn)** 是面向高校工科学生的 AI 学习与工程实践助教。
-它不替学生做题，而是理解学习状态，调用真实工具处理真实工程工件，用启发式交互推动学生自己到达结论，再验证是否真正掌握。
+我们关注的不只是模型本身，而是如何把 Agent 可靠地交付给真实用户：让目标、状态、Skill、工具、执行过程和可验证结果形成完整闭环。
 
-计算机网络是第一个课程包，教学内核与具体学科解耦，后续可扩展数据结构、操作系统、组成原理与嵌入式等课程。
+## Projects
 
-```text
-理解状态 → 处理真实工件 → 启发式交互 → 验证掌握 → 留下学习证据
-```
+| Project | Role |
+| --- | --- |
+| **[LingxiLearn](https://github.com/LingXi-Org/LingxiLearn)** | 面向个人学习任务的 AI 学习工作台，通过状态驱动的多 Agent 编排持续调整学习体验。 |
+| **[LingxiGraph](https://github.com/LingXi-Org/LingxiGraph)** | 生产级 Agent 图运行时，提供状态图、持久化、恢复、流式事件与服务化执行能力。 |
+| **[LingxiSkills](https://github.com/LingXi-Org/LingxiSkills)** | 可组合的 Agent Skills 能力库，提供教学、评测、可视化、学习状态等标准化能力。 |
+| **[LingxiIdentity](https://github.com/LingXi-Org/LingxiIdentity)** | LingXi 系列统一身份认证与用户管理服务，提供 OIDC / OAuth2 / JWT 与 BFF 会话边界。 |
+| **[LingxiNext](https://github.com/LingXi-Org/LingxiNext)** | LingxiGraph 的应用交付与运维层，用于版本化编排、发布、会话绑定与运行管理。 |
 
 ## The LingXi stack
 
-| Project | Role | Use it when |
-| --- | --- | --- |
-| **[LingxiLearn](https://github.com/LingXi-Org/LingxiLearn)** | 面向高校工科学生的 AI 学习与工程实践助教；以课程包和真实工具驱动可验证学习。 | 想构建、体验或贡献下一代 AI 学习产品 |
-| **[LingxiGraph](https://github.com/LingXi-Org/LingxiGraph)** | 供应商中立、可持久化的多智能体图运行时，提供 SDK、checkpoint、流式事件、Agent Server 与 Worker。 | 需要构建可恢复的 Agent 图、工作流或分布式运行服务 |
-| **[LingxiNext](https://github.com/LingXi-Org/LingxiNext)** | 基于 LingxiGraph、原生 Chainlit、PostgreSQL 与 Coze 的版本化多智能体编排平台。 | 需要可视化管理、不可变 revision、会话固定和 Docker Compose 部署 |
-| **[LingxiSkills](https://github.com/LingXi-Org/LingxiSkills)** | 面向 LingxiGraph 及兼容运行时的开放 Agent Skills 库。 | 需要复用或贡献标准化 Agent 能力 |
+```text
+                    LingxiLearn
+                AI learning product
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+   LingxiIdentity  LingxiGraph  LingxiSkills
+      Identity       Runtime     Capabilities
+                         │
+                         ▼
+                 Models · Tools · Data
 
-## Technology map
-
-```mermaid
-flowchart LR
-    Runtime["Durable graph runtime"] --> Graph["LingxiGraph"]
-    Platform["Orchestration platform"] --> Next["LingxiNext"]
-    Product["Learning application"] --> Learn["LingxiLearn"]
-    Learn --> Graph
-    Next --> Graph
-    Next --> Chainlit["Chainlit"]
-    Next --> Coze["Coze"]
-    Graph --> Storage["PostgreSQL · Redis"]
+                   LingxiNext
+              Delivery / Operations
+                         │
+                         └──────► LingxiGraph
 ```
 
-## Engineering principles
+核心思路很简单：
 
-- **Reliability before magic** — 状态、取消、重试、恢复与幂等必须是可验证的运行时能力。
-- **Safe composition** — 用稳定协议和受约束模板组合 Agent，默认拒绝任意代码注入。
-- **Version everything** — 锁定依赖、图 revision 与部署配置，让历史会话保持可解释。
-- **Production is the default** — 认证、审计、健康检查、迁移和容器安全不是后续补丁。
-- **Open by construction** — 公开设计、代码和问题，在真实反馈中持续演进。
+> **Skill 定义系统能够做什么，State 决定此刻应该做什么。**
 
-## Get started
+## Join LingXi
 
-```bash
-# AI learning product
-git clone https://github.com/LingXi-Org/LingxiLearn.git
-cd LingxiLearn
-make setup
-make dev
-# open http://localhost:8000
-```
+我们欢迎对 **AI Learning、Agent、Runtime、Skills、Frontend、Infrastructure、Design** 感兴趣的开发者参与。
 
-## Contributing and security
+不需要长篇自我介绍。选择一个你感兴趣的方向，在这里开始：
 
-欢迎问题报告、设计讨论、课程内容、文档改进与 Pull Request。
-想一起做产品、课程、工程或设计？选择一个方向，提交 **[Join LingXi / 加入我们](https://github.com/LingXi-Org/.github/issues/new?template=join-lingxi.yml)**，只需填写最少信息即可。
+**[Join LingXi / 加入我们 →](https://github.com/LingXi-Org/.github/issues/new?template=join-lingxi.yml)**
 
-提交代码前请阅读：
+也可以直接浏览 [Issues](https://github.com/orgs/LingXi-Org/repositories) 或向任意项目提交 Pull Request。
 
-- [Contribution guide](https://github.com/LingXi-Org/.github/blob/main/CONTRIBUTING.md)
-- [Security policy](https://github.com/LingXi-Org/.github/blob/main/SECURITY.md)
-- [Support guide](https://github.com/LingXi-Org/.github/blob/main/SUPPORT.md)
-- [Code of Conduct](https://github.com/LingXi-Org/.github/blob/main/CODE_OF_CONDUCT.md)
-
-安全漏洞请勿通过公开 Issue 报告；请使用受影响仓库的 **Security → Report a vulnerability**。
+---
 
 <div align="center">
 
-**Build agents that keep working after the demo ends.**
+**Build AI systems that understand, adapt, and keep working.**
 
 </div>
