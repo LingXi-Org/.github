@@ -16,7 +16,7 @@
 
 ## What we build
 
-LingXi 是一个围绕 **AI 学习产品、Agent 运行时、可复用能力与身份基础设施** 构建的开源项目组。
+LingXi 是一个围绕 **AI 学习产品、Agent 运行时、可复用能力、身份基础设施与受控 Agent 应用** 构建的开源项目组。
 
 我们关注的不只是模型本身，而是如何把 Agent 可靠地交付给真实用户：让目标、状态、Skill、工具、执行过程和可验证结果形成完整闭环。
 
@@ -28,7 +28,7 @@ LingXi 是一个围绕 **AI 学习产品、Agent 运行时、可复用能力与�
 | **[LingxiGraph](https://github.com/LingXi-Org/LingxiGraph)** | 生产级 Agent 图运行时，提供状态图、持久化、恢复、流式事件与服务化执行能力。 |
 | **[LingxiSkills](https://github.com/LingXi-Org/LingxiSkills)** | 可组合的 Agent Skills 能力库，提供教学、评测、可视化、学习状态等标准化能力。 |
 | **[LingxiIdentity](https://github.com/LingXi-Org/LingxiIdentity)** | LingXi 系列统一身份认证与用户管理服务，提供 OIDC / OAuth2 / JWT 与 BFF 会话边界。 |
-| **[LingxiNext](https://github.com/LingXi-Org/LingxiNext)** | LingxiGraph 的应用交付与运维层，用于版本化编排、发布、会话绑定与运行管理。 |
+| **[LingxiNext](https://github.com/LingXi-Org/LingxiNext)** | 面向 LingxiGraph 的安全、版本化多 Agent 应用层，以 Chainlit 提供交互入口，并负责受控编排、Revision 发布、会话绑定与审计。 |
 
 ## The LingXi stack
 
@@ -45,7 +45,7 @@ LingXi 是一个围绕 **AI 学习产品、Agent 运行时、可复用能力与�
                  Models · Tools · Data
 
                    LingxiNext
-              Delivery / Operations
+             Versioned Agent App
                          │
                          └──────► LingxiGraph
 ```
