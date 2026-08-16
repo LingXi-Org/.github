@@ -26,7 +26,7 @@ body:
         - LingxiGraph — Agent 运行时
         - LingxiSkills — Agent Skills 能力库
         - LingxiIdentity — 身份认证与用户服务
-        - LingxiNext — Agent 应用交付与运维
+        - LingxiNext — 安全、版本化多 Agent 应用层
     validations:
       required: true
 
