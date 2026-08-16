@@ -101,21 +101,45 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --body-file /tmp/comment.md
 
-  approve-by-command:
-    name: Approve applicant from command
+  approve-and-invite:
+    name: Approve and invite applicant
     if: >-
-      github.event_name == 'issue_comment' &&
-      github.event.action == 'created' &&
-      github.actor == 'leecyang' &&
-      github.event.comment.body == '/approve' &&
-      !github.event.issue.pull_request &&
       (
-        contains(github.event.issue.labels.*.name, 'join') ||
-        startsWith(github.event.issue.title, '[Join LingXi]:')
+        github.event_name == 'issue_comment' &&
+        github.event.action == 'created' &&
+        github.actor == 'leecyang' &&
+        github.event.comment.body == '/approve' &&
+        !github.event.issue.pull_request &&
+        (
+          contains(github.event.issue.labels.*.name, 'join') ||
+          startsWith(github.event.issue.title, '[Join LingXi]:')
+        )
+      ) ||
+      (
+        github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'join-approved' &&
+        github.actor == 'leecyang' &&
+        (
+          contains(github.event.issue.labels.*.name, 'join') ||
+          startsWith(github.event.issue.title, '[Join LingXi]:')
+        )
       )
     runs-on: ubuntu-latest
     steps:
-      - name: Mark application approved
+      - name: Validate organization invitation credential
+        env:
+          ORG_INVITE_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$ORG_INVITE_TOKEN" ]; then
+            echo "::error::Missing Actions secret ORG_INVITE_TOKEN. Configure a token with LingXi-Org Members: write permission."
+            exit 1
+          fi
+
+      - name: Mark command approval with label
+        if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -136,30 +160,6 @@ jobs:
           gh issue edit "$ISSUE_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
             --add-label "join-approved"
-
-  invite:
-    name: Invite approved applicant
-    if: >-
-      github.event_name == 'issues' &&
-      github.event.action == 'labeled' &&
-      github.event.label.name == 'join-approved' &&
-      github.actor == 'leecyang' &&
-      (
-        contains(github.event.issue.labels.*.name, 'join') ||
-        startsWith(github.event.issue.title, '[Join LingXi]:')
-      )
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate organization invitation credential
-        env:
-          ORG_INVITE_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "$ORG_INVITE_TOKEN" ]; then
-            echo "::error::Missing Actions secret ORG_INVITE_TOKEN. Configure a token with LingXi-Org Members: write permission."
-            exit 1
-          fi
 
       - name: Invite applicant to LingXi-Org
         id: invite
