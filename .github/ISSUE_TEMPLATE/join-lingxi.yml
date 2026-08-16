@@ -1,6 +1,6 @@
 name: Join LingXi / 加入我们
-description: 选择一个你想参与的方向，和我们一起把 LingxiLearn 做得更好
-title: "[Join LingXi]: "
+description: 选择你希望参与的 LingXi 项目，提交加入申请
+title: "[Join] 申请加入 LingXi"
 labels: ["community", "join"]
 body:
   - type: markdown
@@ -8,31 +8,37 @@ body:
       value: |
         ## 欢迎加入 LingXi 👋
 
-        不需要简历，也不需要长篇自我介绍。选择一个最接近你的方向，剩下的我们在 Issue 里聊。
+        选择你希望参与的项目并提交申请。Issue 创建后，机器人会自动把标题更新为：
 
-        > GitHub 用户名会自动显示在 Issue 中，请不要填写邮箱、手机号、Token 或其他敏感信息。
+        `@你的GitHub账号 请求加入 项目名`
+
+        审核通过后，系统会向你的 GitHub 账号发送 **LingXi-Org** Organization 邀请。
+
+        > 不需要填写邮箱、手机号、Token 或其他敏感信息。
+
   - type: dropdown
-    id: path
+    id: project
     attributes:
-      label: 你想从哪里开始？
-      description: 选一个最想尝试的方向；之后可以调整。
+      label: 想加入的项目
+      description: 选择一个你当前最希望参与的 LingXi 项目。
       options:
-        - 开发 LingxiLearn：前端、后端、Agent、测试
-        - 设计学习体验：交互、视觉、产品
-        - 共建课程内容：计算机网络及其他工科课程
-        - 文档、示例与社区运营
-        - 体验产品并提供反馈
-        - 我还不确定，想先了解一下
+        - LingxiLearn — AI 学习工作台
+        - LingxiGraph — Agent 运行时
+        - LingxiSkills — Agent Skills 能力库
+        - LingxiIdentity — 身份认证与用户服务
+        - LingxiNext — Agent 应用交付与运维
     validations:
       required: true
+
   - type: textarea
     id: note
     attributes:
-      label: 想一起做什么？（可选）
-      description: 一句话就好：你感兴趣的主题、正在做的项目，或希望先了解的内容。
-      placeholder: 例如：我想帮忙改进 TCP 课程中的交互任务。
+      label: 想参与什么？
+      description: 简单说说你希望参与的模块、问题或方向即可。
+      placeholder: 例如：我想参与 LingxiLearn 的前端学习工作台和可视化组件开发。
     validations:
       required: false
+
   - type: checkboxes
     id: safety
     attributes:
