@@ -25,10 +25,20 @@ jobs:
   welcome:
     name: Welcome applicant
     if: >-
-      github.event_name == 'issues' &&
-      github.event.action == 'opened' &&
       (
-        contains(github.event.issue.labels.*.name, 'join') ||
+        github.event_name == 'issues' &&
+        github.event.action == 'opened' &&
+        (
+          contains(github.event.issue.labels.*.name, 'join') ||
+          startsWith(github.event.issue.title, '[Join LingXi]:')
+        )
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.action == 'created' &&
+        github.actor == 'leecyang' &&
+        github.event.comment.body == '/welcome' &&
+        !github.event.issue.pull_request &&
         startsWith(github.event.issue.title, '[Join LingXi]:')
       )
     runs-on: ubuntu-latest
