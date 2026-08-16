@@ -62,7 +62,7 @@ LingXi 是一个围绕 **AI 学习产品、Agent 运行时、可复用能力与�
 
 **[Join LingXi / 加入我们 →](https://github.com/LingXi-Org/.github/issues/new?template=join-lingxi.yml)**
 
-也可以直接浏览 [Issues](https://github.com/orgs/LingXi-Org/repositories) 或向任意项目提交 Pull Request。
+也可以直接浏览 [LingXi 项目列表](https://github.com/orgs/LingXi-Org/repositories)，或向任意项目提交 Pull Request。
 
 ---
 
