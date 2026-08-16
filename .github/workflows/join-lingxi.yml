@@ -1,0 +1,245 @@
+name: Join LingXi Automation
+
+on:
+  issues:
+    types:
+      - opened
+      - labeled
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: join-lingxi-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+env:
+  ORG_NAME: LingXi-Org
+  APPROVER: leecyang
+
+jobs:
+  welcome:
+    name: Welcome applicant
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'opened' &&
+      (
+        contains(github.event.issue.labels.*.name, 'join') ||
+        startsWith(github.event.issue.title, '[Join LingXi]:')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure workflow labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ensure_label() {
+            local name="$1"
+            local color="$2"
+            local description="$3"
+
+            if gh api "/repos/$GITHUB_REPOSITORY/labels/$name" >/dev/null 2>&1; then
+              return 0
+            fi
+
+            gh api \
+              --method POST \
+              "/repos/$GITHUB_REPOSITORY/labels" \
+              -f name="$name" \
+              -f color="$color" \
+              -f description="$description" \
+              >/dev/null
+          }
+
+          ensure_label "community" "6f42c1" "Community participation"
+          ensure_label "join" "0e8a16" "Request to join LingXi"
+          ensure_label "join-approved" "1d76db" "Approved to receive a LingXi-Org invitation"
+
+      - name: Restore Join labels if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --add-label "community,join"
+
+      - name: Welcome applicant and mention approver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          APPLICANT: ${{ github.event.issue.user.login }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/comment.md <<EOF
+          欢迎 @$APPLICANT 👋
+
+          感谢你愿意参与 LingXi！我们已经收到你的加入申请，接下来会在这个 Issue 中继续沟通。
+
+          @$APPROVER 有新的 LingXi 加入申请需要审核。
+
+          **管理员审核方式**
+
+          - 回复 \`/approve\`
+          - 或给这个 Issue 添加 \`join-approved\` 标签
+
+          审核通过后，系统会自动向 @$APPLICANT 发送 **LingXi-Org** GitHub Organization 邀请。
+          EOF
+
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file /tmp/comment.md
+
+  approve-by-command:
+    name: Approve applicant from command
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.actor == 'leecyang' &&
+      github.event.comment.body == '/approve' &&
+      !github.event.issue.pull_request &&
+      (
+        contains(github.event.issue.labels.*.name, 'join') ||
+        startsWith(github.event.issue.title, '[Join LingXi]:')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark application approved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! gh api "/repos/$GITHUB_REPOSITORY/labels/join-approved" >/dev/null 2>&1; then
+            gh api \
+              --method POST \
+              "/repos/$GITHUB_REPOSITORY/labels" \
+              -f name="join-approved" \
+              -f color="1d76db" \
+              -f description="Approved to receive a LingXi-Org invitation" \
+              >/dev/null
+          fi
+
+          gh issue edit "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --add-label "join-approved"
+
+  invite:
+    name: Invite approved applicant
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'join-approved' &&
+      github.actor == 'leecyang' &&
+      (
+        contains(github.event.issue.labels.*.name, 'join') ||
+        startsWith(github.event.issue.title, '[Join LingXi]:')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate organization invitation credential
+        env:
+          ORG_INVITE_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$ORG_INVITE_TOKEN" ]; then
+            echo "::error::Missing Actions secret ORG_INVITE_TOKEN. Configure a token with LingXi-Org Members: write permission."
+            exit 1
+          fi
+
+      - name: Invite applicant to LingXi-Org
+        id: invite
+        env:
+          GH_TOKEN: ${{ secrets.ORG_INVITE_TOKEN }}
+          APPLICANT: ${{ github.event.issue.user.login }}
+          APPLICANT_ID: ${{ github.event.issue.user.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Applicant: $APPLICANT"
+          echo "Applicant ID: $APPLICANT_ID"
+
+          if gh api "/orgs/$ORG_NAME/members/$APPLICANT" >/dev/null 2>&1; then
+            echo "status=already_member" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          pending_id="$(
+            gh api \
+              --paginate \
+              "/orgs/$ORG_NAME/invitations?per_page=100" \
+              --jq ".[] | select(.login == \"$APPLICANT\") | .id" \
+              | head -n 1 || true
+          )"
+
+          if [ -n "$pending_id" ]; then
+            echo "status=pending" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          gh api \
+            --method POST \
+            "/orgs/$ORG_NAME/invitations" \
+            -F invitee_id="$APPLICANT_ID" \
+            -f role="direct_member" \
+            >/dev/null
+
+          echo "status=invited" >> "$GITHUB_OUTPUT"
+
+      - name: Report invitation result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          APPLICANT: ${{ github.event.issue.user.login }}
+          STATUS: ${{ steps.invite.outputs.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$STATUS" in
+            invited)
+              cat > /tmp/result.md <<EOF
+          ✅ @$APPLICANT 已通过审核。
+
+          **LingXi-Org** 的 GitHub Organization 邀请已经发送。请检查 GitHub 通知或邮箱并接受邀请。
+
+          欢迎加入 LingXi！🎉
+          EOF
+              ;;
+            pending)
+              cat > /tmp/result.md <<EOF
+          🕓 @$APPLICANT 已通过审核，并且已经存在一个尚未接受的 **LingXi-Org** 邀请。
+
+          无需重复发送，请检查 GitHub 通知或邮箱并接受现有邀请。
+          EOF
+              ;;
+            already_member)
+              cat > /tmp/result.md <<EOF
+          ✅ @$APPLICANT 已经是 **LingXi-Org** 成员，无需再次邀请。
+          EOF
+              ;;
+            *)
+              cat > /tmp/result.md <<EOF
+          ⚠️ 无法确认 @$APPLICANT 的组织邀请状态，请 @$APPROVER 检查本次 GitHub Actions 运行记录。
+          EOF
+              ;;
+          esac
+
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file /tmp/result.md
