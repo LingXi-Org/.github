@@ -1,4 +1,4 @@
-name: Community config validation
+name: 社区配置校验
 
 on:
   pull_request:
@@ -15,18 +15,18 @@ permissions:
 
 jobs:
   validate:
-    name: Validate discussion forms and workflows
+    name: 校验 Discussion 表单与工作流
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
+      - name: 检出源码
         uses: actions/checkout@v4
 
-      - name: Set up Ruby
+      - name: 配置 Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
 
-      - name: Parse YAML and validate required forms
+      - name: 解析 YAML 并校验必要配置
         shell: ruby {0}
         run: |
           require 'yaml'
@@ -39,14 +39,26 @@ jobs:
             'engineering-notes' => '.github/DISCUSSION_TEMPLATE/engineering-notes.yml'
           }
 
+          expected_titles = {
+            'announcements' => '[公告] ',
+            'ideas-and-requests' => '[需求] ',
+            'weekly-missions' => '[每周任务] ',
+            'submissions' => '[任务提交] ',
+            'engineering-notes' => '[技术札记] '
+          }
+
           forms.each do |slug, path|
-            raise "Missing #{path}" unless File.file?(path)
+            raise "缺少文件：#{path}" unless File.file?(path)
             data = YAML.safe_load(File.read(path), aliases: false)
-            raise "#{path}: body must be a non-empty array" unless data.is_a?(Hash) && data['body'].is_a?(Array) && !data['body'].empty?
-            raise "#{path}: at least one non-markdown field is required" unless data['body'].any? { |field| field['type'] != 'markdown' }
+            raise "#{path}：body 必须是非空数组" unless data.is_a?(Hash) && data['body'].is_a?(Array) && !data['body'].empty?
+            raise "#{path}：至少需要一个非 markdown 字段" unless data['body'].any? { |field| field['type'] != 'markdown' }
+            raise "#{path}：标题前缀必须为 #{expected_titles[slug]}" unless data['title'] == expected_titles[slug]
 
             ids = data['body'].filter_map { |field| field['id'] }
-            raise "#{path}: duplicate field id" unless ids.uniq.length == ids.length
+            raise "#{path}：存在重复字段 id" unless ids.uniq.length == ids.length
+
+            labels = data['body'].filter_map { |field| field.dig('attributes', 'label') }
+            raise "#{path}：字段名称不得继续使用中英双语斜杠格式" if labels.any? { |label| label.include?(' / ') }
           end
 
           workflow_paths = %w[
@@ -55,7 +67,7 @@ jobs:
           ]
 
           workflow_paths.each do |path|
-            raise "Missing #{path}" unless File.file?(path)
+            raise "缺少文件：#{path}" unless File.file?(path)
             YAML.safe_load(File.read(path), aliases: false)
           end
 
@@ -64,10 +76,12 @@ jobs:
 
           forms.keys.each do |slug|
             next if slug == 'announcements' && publisher.include?(slug)
-            raise "Workflow configuration does not reference category slug #{slug}" unless governance.include?(slug)
+            raise "治理工作流未引用分类 slug：#{slug}" unless governance.include?(slug)
           end
 
-          raise 'Publisher must target Announcements' unless publisher.include?('ANNOUNCEMENTS_SLUG: announcements')
-          raise 'Scheduled publisher must remain gated by DISCUSSIONS_AUTOMATION_ENABLED' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
+          raise '发布工作流必须指向 announcements 分类' unless publisher.include?('ANNOUNCEMENTS_SLUG: announcements')
+          raise '定时发布必须继续受 DISCUSSIONS_AUTOMATION_ENABLED 控制' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
+          raise '需求审批命令必须继续保留 /approve' unless governance.include?('/approve')
+          raise '任务验收命令必须继续保留 /accept' unless governance.include?('/accept')
 
-          puts "Validated #{forms.length} Discussion Forms and #{workflow_paths.length} community workflows."
+          puts "已校验 #{forms.length} 个 Discussion 表单和 #{workflow_paths.length} 个社区工作流。"
