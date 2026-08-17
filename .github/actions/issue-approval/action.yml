@@ -1,5 +1,5 @@
-name: LingXi Issue 审批
-description: 开发 Issue 由任意一名 Mentor 批准
+name: Issue 确认
+description: 开发 Issue 由任意一位导师确认
 inputs:
   github_token:
     required: true
@@ -29,7 +29,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: 处理 Issue 审批
+    - name: 检查 Issue 状态
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
@@ -64,27 +64,24 @@ runs:
           if [ "$user" = "$OWNER_LOGIN" ]; then
             return 0
           fi
-          if [ -z "${TEAM_TOKEN:-}" ]; then
-            return 1
-          fi
+          [ -n "${TEAM_TOKEN:-}" ] || return 1
           GH_TOKEN="$TEAM_TOKEN" gh api "/orgs/$ORG_NAME/teams/$MENTOR_TEAM/memberships/$user" \
             --jq 'select(.state == "active") | .state' >/dev/null 2>&1
         }
 
-        ensure_label "issue:review" "FBCA04" "等待 Mentor 批准"
-        ensure_label "issue:approved" "0E8A16" "开发 Issue 已批准"
-        ensure_label "issue:declined" "B60205" "开发 Issue 当前未批准"
+        ensure_label "issue:review" "FBCA04" "等待导师确认"
+        ensure_label "issue:approved" "0E8A16" "已确认进入开发"
+        ensure_label "issue:declined" "B60205" "暂不进入开发"
 
         if [ "$EVENT_NAME" = "issues" ]; then
           if grep -Fq '<!-- lingxi-governance:issue-approved-by:' <<<"${ISSUE_BODY:-}"; then
-            approver="$(sed -n 's/.*<!-- lingxi-governance:issue-approved-by:\([^ >]*\).*/\1/p' <<<"$ISSUE_BODY" | head -n1)"
             add_label "issue:approved"
             remove_label "issue:review"
             remove_label "issue:declined"
-            comment "✅ 该 Issue 来自已审批的组织需求讨论，批准者：@${approver:-unknown}。无需再次审批，可以进入开发。"
+            comment "✅ 该 Issue 已完成需求确认，可以进入开发。"
           else
             add_label "issue:review"
-            comment "@$ORG_NAME/$MENTOR_TEAM 新开发 Issue 等待审批。任意一名 Mentor 回复 \`/approve-issue\` 即可进入开发；回复 \`/decline-issue\` 可标记为暂不开发。"
+            comment "@$ORG_NAME/$MENTOR_TEAM 这个 Issue 需要一位导师确认。回复 \`/approve-issue\` 通过，或回复 \`/decline-issue\` 暂不进入开发。"
           fi
           exit 0
         fi
@@ -96,7 +93,7 @@ runs:
         esac
 
         if ! is_mentor "$ACTOR"; then
-          comment "@$ACTOR 该命令仅限 @$ORG_NAME/$MENTOR_TEAM 成员使用。"
+          comment "@$ACTOR 该操作仅对 @$ORG_NAME/$MENTOR_TEAM 开放。"
           exit 0
         fi
 
@@ -104,10 +101,10 @@ runs:
           add_label "issue:approved"
           remove_label "issue:review"
           remove_label "issue:declined"
-          comment "✅ 该开发 Issue 已由 Mentor @$ACTOR 批准，可以进入开发。"
+          comment "✅ 已确认，可以进入开发。"
         else
           add_label "issue:declined"
           remove_label "issue:review"
           remove_label "issue:approved"
-          comment "该 Issue 已由 Mentor @$ACTOR 标记为暂不进入开发；如有新信息可以继续讨论后重新审批。"
+          comment "暂不进入开发。如有新信息，可以继续讨论后再次确认。"
         fi
