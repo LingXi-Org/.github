@@ -1,0 +1,28 @@
+name: PR 审批治理
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  approval-gate:
+    name: PR 审批门禁
+    runs-on: ubuntu-latest
+    steps:
+      - name: 执行 LingXi PR 审批策略
+        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@main
+        with:
+          github_token: ${{ github.token }}
+          owner_login: leecyang
+          mentor_one: ${{ vars.MENTOR_ONE }}
+          mentor_two: ${{ vars.MENTOR_TWO }}
+          repository: ${{ github.repository }}
+          pr_number: ${{ github.event.pull_request.number }}
+          author: ${{ github.event.pull_request.user.login }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
