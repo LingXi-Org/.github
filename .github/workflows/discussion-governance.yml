@@ -1,0 +1,411 @@
+name: Discussion Governance
+
+on:
+  discussion:
+    types: [created]
+  discussion_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  discussions: write
+  issues: write
+
+concurrency:
+  group: discussion-governance-${{ github.event.discussion.number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  ORG_NAME: LingXi-Org
+  APPROVER: leecyang
+
+jobs:
+  triage:
+    name: Triage new discussion
+    if: github.event_name == 'discussion' && github.event.action == 'created'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Classify discussion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CATEGORY: ${{ github.event.discussion.category.slug }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+          AUTHOR: ${{ github.event.discussion.user.login }}
+          DISCUSSION_BODY: ${{ github.event.discussion.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_name="${GITHUB_REPOSITORY#*/}"
+
+          ensure_label() {
+            gh label create "$1" --repo "$GITHUB_REPOSITORY" --color "$2" --description "$3" --force >/dev/null
+          }
+
+          label_id() {
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!,$label:String!){repository(owner:$owner,name:$name){label(name:$label){id}}}' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" -F name="$repo_name" -F label="$1" \
+              --jq '.data.repository.label.id'
+          }
+
+          add_label() {
+            local id
+            id="$(label_id "$1")"
+            gh api graphql \
+              -f query='mutation($discussion:ID!,$label:ID!){addLabelsToLabelable(input:{labelableId:$discussion,labelIds:[$label]}){clientMutationId}}' \
+              -F discussion="$DISCUSSION_ID" -F label="$id" >/dev/null
+          }
+
+          comment() {
+            local body
+            body="$(cat "$1")"
+            gh api graphql \
+              -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+              -F discussion="$DISCUSSION_ID" -f body="$body" >/dev/null
+          }
+
+          case "$CATEGORY" in
+            ideas-and-requests)
+              ensure_label "proposal:review" "FBCA04" "Awaiting maintainer review"
+              ensure_label "proposal:approved" "0E8A16" "Approved to become an implementation issue"
+              ensure_label "proposal:declined" "B60205" "Not accepted for implementation"
+              add_label "proposal:review"
+
+              cat > /tmp/comment.md <<EOF
+          @$APPROVER 有新的想法或需求等待审批。
+
+          **提出者**：@$AUTHOR
+
+          审批前请先确认目标仓库和需求边界。维护者可回复：
+
+          - \`/approve\`：按表单中的目标仓库批准
+          - \`/approve LingxiSkills\`：批准并覆盖目标仓库
+          - \`/decline\`：不进入工程 Issue
+
+          批准后，机器人会为 @$AUTHOR 生成对应仓库的预填 Issue 创建入口；Issue 仍由需求提出者本人提交。
+          EOF
+              comment /tmp/comment.md
+              ;;
+
+            weekly-missions)
+              ensure_label "mission:open" "1D76DB" "Weekly Mission is open"
+              ensure_label "mission:closed" "6E7781" "Weekly Mission is closed"
+              add_label "mission:open"
+
+              cat > /tmp/comment.md <<EOF
+          本任务已开放。
+
+          参与者请不要把完整成果直接堆叠在任务评论区。完成后请在 **Submissions** 分类创建独立提交，并在表单中关联本 Mission：
+
+          https://github.com/orgs/$ORG_NAME/discussions/categories/submissions
+
+          维护者可在任务结束后回复 \`/close-mission\` 关闭本周任务。
+          EOF
+              comment /tmp/comment.md
+              ;;
+
+            submissions)
+              ensure_label "submission:received" "5319E7" "Community submission received"
+              ensure_label "submission:accepted" "0E8A16" "Submission accepted"
+              ensure_label "submission:needs-work" "D93F0B" "Submission needs follow-up"
+              add_label "submission:received"
+
+              mission_url="$(
+                python3 - <<'PY'
+          import os, re
+          body = os.environ.get("DISCUSSION_BODY", "")
+          m = re.search(r"(?ms)^### 关联任务 / Mission discussion\s*\n+\s*(\S+)", body)
+          print(m.group(1).strip() if m else "")
+          PY
+              )"
+
+              cat > /tmp/comment.md <<EOF
+          已收到 @$AUTHOR 的任务提交。
+
+          **关联 Mission**：${mission_url:-未识别，请检查表单中的 Mission discussion 链接}
+
+          维护者评审命令：
+
+          - \`/accept\`：标记为已通过
+          - \`/needs-work\`：标记为需要继续完善
+          EOF
+              comment /tmp/comment.md
+              ;;
+
+            engineering-notes)
+              ensure_label "engineering-note" "0969DA" "Technical article or engineering note"
+              add_label "engineering-note"
+              ;;
+
+            announcements)
+              ensure_label "announcement" "0052CC" "Official LingXi announcement"
+              add_label "announcement"
+              ;;
+
+            *)
+              echo "No automation configured for category: $CATEGORY"
+              ;;
+          esac
+
+  approve-request:
+    name: Approve request
+    if: >-
+      github.event_name == 'discussion_comment' &&
+      github.event.action == 'created' &&
+      github.actor == 'leecyang' &&
+      github.event.discussion.category.slug == 'ideas-and-requests' &&
+      startsWith(github.event.comment.body, '/approve')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve and prepare issue handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+          DISCUSSION_URL: ${{ github.event.discussion.html_url }}
+          DISCUSSION_TITLE: ${{ github.event.discussion.title }}
+          DISCUSSION_BODY: ${{ github.event.discussion.body }}
+          AUTHOR: ${{ github.event.discussion.user.login }}
+          COMMAND: ${{ github.event.comment.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_name="${GITHUB_REPOSITORY#*/}"
+
+          ensure_label() {
+            gh label create "$1" --repo "$GITHUB_REPOSITORY" --color "$2" --description "$3" --force >/dev/null
+          }
+
+          label_id() {
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!,$label:String!){repository(owner:$owner,name:$name){label(name:$label){id}}}' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" -F name="$repo_name" -F label="$1" \
+              --jq '.data.repository.label.id'
+          }
+
+          add_label() {
+            local id
+            id="$(label_id "$1")"
+            gh api graphql \
+              -f query='mutation($discussion:ID!,$label:ID!){addLabelsToLabelable(input:{labelableId:$discussion,labelIds:[$label]}){clientMutationId}}' \
+              -F discussion="$DISCUSSION_ID" -F label="$id" >/dev/null
+          }
+
+          remove_label() {
+            local id
+            id="$(label_id "$1")"
+            gh api graphql \
+              -f query='mutation($discussion:ID!,$label:ID!){removeLabelsFromLabelable(input:{labelableId:$discussion,labelIds:[$label]}){clientMutationId}}' \
+              -F discussion="$DISCUSSION_ID" -F label="$id" >/dev/null
+          }
+
+          result="$(
+            python3 - <<'PY'
+          import os, re, urllib.parse
+
+          allowed = {"LingxiLearn", "LingxiGraph", "LingxiSkills", "LingxiIdentity", "LingxiNext"}
+          body = os.environ.get("DISCUSSION_BODY", "")
+          command = os.environ.get("COMMAND", "").strip()
+          title = os.environ.get("DISCUSSION_TITLE", "").strip()
+          discussion_url = os.environ.get("DISCUSSION_URL", "")
+          author = os.environ.get("AUTHOR", "")
+
+          m = re.search(r"(?ms)^### 目标仓库 / Target repository\s*\n+\s*([^\n]+)", body)
+          selected = m.group(1).strip() if m else ""
+          parts = command.split()
+          override = parts[1].strip() if len(parts) > 1 else ""
+          target = override or selected
+
+          if target not in allowed:
+              print("ERROR|目标仓库未确定。请使用 `/approve LingxiSkills` 这类命令明确指定仓库。")
+              raise SystemExit
+
+          issue_title = title
+          if issue_title.startswith("[Request]"):
+              issue_title = issue_title[len("[Request]"):].strip()
+          issue_title = f"[Request] {issue_title}"
+
+          issue_body = f"""## 来源
+
+          本 Issue 已在 LingXi Organization Discussion 中完成需求讨论并获得维护者批准。
+
+          - Discussion: {discussion_url}
+          - 提出者: @{author}
+
+          ## 实现要求
+
+          请以原 Discussion 中已经形成的需求边界和验收结论为准。若实现过程中需要改变公共接口、兼容性或安全边界，应先回到原 Discussion 补充设计共识。
+          """
+
+          query = urllib.parse.urlencode({"title": issue_title, "body": issue_body})
+          url = f"https://github.com/LingXi-Org/{target}/issues/new?{query}"
+          print(f"OK|{target}|{url}")
+          PY
+          )"
+
+          if [[ "$result" == ERROR\|* ]]; then
+            message="${result#ERROR|}"
+            gh api graphql \
+              -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+              -F discussion="$DISCUSSION_ID" -f body="@$APPROVER $message" >/dev/null
+            exit 0
+          fi
+
+          IFS='|' read -r _ target issue_url <<<"$result"
+          ensure_label "proposal:review" "FBCA04" "Awaiting maintainer review"
+          ensure_label "proposal:approved" "0E8A16" "Approved to become an implementation issue"
+          add_label "proposal:approved"
+          remove_label "proposal:review" || true
+
+          cat > /tmp/comment.md <<EOF
+          ✅ 需求已通过维护者审批。
+
+          **目标仓库**：\`LingXi-Org/$target\`
+
+          @$AUTHOR 请使用下面的入口创建工程 Issue。Issue 将由你的 GitHub 账号创建，并自动带上原 Discussion 引用：
+
+          **[在 $target 创建 Issue]($issue_url)**
+
+          后续实现、验收和 PR 跟踪应转移到该 Issue；需求范围发生实质变化时，再回到本 Discussion 重新确认。
+          EOF
+
+          body="$(cat /tmp/comment.md)"
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+            -F discussion="$DISCUSSION_ID" -f body="$body" >/dev/null
+
+  decline-request:
+    name: Decline request
+    if: >-
+      github.event_name == 'discussion_comment' &&
+      github.event.action == 'created' &&
+      github.actor == 'leecyang' &&
+      github.event.discussion.category.slug == 'ideas-and-requests' &&
+      github.event.comment.body == '/decline'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark request declined
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+          AUTHOR: ${{ github.event.discussion.user.login }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_name="${GITHUB_REPOSITORY#*/}"
+
+          for spec in \
+            "proposal:review|FBCA04|Awaiting maintainer review" \
+            "proposal:declined|B60205|Not accepted for implementation"; do
+            IFS='|' read -r name color description <<<"$spec"
+            gh label create "$name" --repo "$GITHUB_REPOSITORY" --color "$color" --description "$description" --force >/dev/null
+          done
+
+          get_label_id() {
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!,$label:String!){repository(owner:$owner,name:$name){label(name:$label){id}}}' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" -F name="$repo_name" -F label="$1" \
+              --jq '.data.repository.label.id'
+          }
+
+          declined_id="$(get_label_id "proposal:declined")"
+          review_id="$(get_label_id "proposal:review")"
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$add:ID!,$remove:ID!){addLabelsToLabelable(input:{labelableId:$discussion,labelIds:[$add]}){clientMutationId} removeLabelsFromLabelable(input:{labelableId:$discussion,labelIds:[$remove]}){clientMutationId}}' \
+            -F discussion="$DISCUSSION_ID" -F add="$declined_id" -F remove="$review_id" >/dev/null
+
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+            -F discussion="$DISCUSSION_ID" \
+            -f body="本需求当前不进入工程 Issue。@$AUTHOR 如有新的约束、证据或使用场景，可以继续在本 Discussion 补充后重新申请评审。" >/dev/null
+
+  close-mission:
+    name: Close weekly mission
+    if: >-
+      github.event_name == 'discussion_comment' &&
+      github.event.action == 'created' &&
+      github.actor == 'leecyang' &&
+      github.event.discussion.category.slug == 'weekly-missions' &&
+      github.event.comment.body == '/close-mission'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark mission closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_name="${GITHUB_REPOSITORY#*/}"
+
+          for spec in \
+            "mission:open|1D76DB|Weekly Mission is open" \
+            "mission:closed|6E7781|Weekly Mission is closed"; do
+            IFS='|' read -r name color description <<<"$spec"
+            gh label create "$name" --repo "$GITHUB_REPOSITORY" --color "$color" --description "$description" --force >/dev/null
+          done
+
+          label_id() {
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!,$label:String!){repository(owner:$owner,name:$name){label(name:$label){id}}}' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" -F name="$repo_name" -F label="$1" \
+              --jq '.data.repository.label.id'
+          }
+
+          open_id="$(label_id "mission:open")"
+          closed_id="$(label_id "mission:closed")"
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$add:ID!,$remove:ID!){addLabelsToLabelable(input:{labelableId:$discussion,labelIds:[$add]}){clientMutationId} removeLabelsFromLabelable(input:{labelableId:$discussion,labelIds:[$remove]}){clientMutationId}}' \
+            -F discussion="$DISCUSSION_ID" -F add="$closed_id" -F remove="$open_id" >/dev/null
+
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+            -F discussion="$DISCUSSION_ID" \
+            -f body="本 Weekly Mission 已结束。已有 Submission 可以继续评审；新的成果建议参加后续 Mission。" >/dev/null
+
+  review-submission:
+    name: Review submission
+    if: >-
+      github.event_name == 'discussion_comment' &&
+      github.event.action == 'created' &&
+      github.actor == 'leecyang' &&
+      github.event.discussion.category.slug == 'submissions' &&
+      (github.event.comment.body == '/accept' || github.event.comment.body == '/needs-work')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update submission status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+          AUTHOR: ${{ github.event.discussion.user.login }}
+          COMMAND: ${{ github.event.comment.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_name="${GITHUB_REPOSITORY#*/}"
+
+          gh label create "submission:accepted" --repo "$GITHUB_REPOSITORY" --color "0E8A16" --description "Submission accepted" --force >/dev/null
+          gh label create "submission:needs-work" --repo "$GITHUB_REPOSITORY" --color "D93F0B" --description "Submission needs follow-up" --force >/dev/null
+
+          if [ "$COMMAND" = "/accept" ]; then
+            label="submission:accepted"
+            message="✅ @$AUTHOR 的 Submission 已通过评审。"
+          else
+            label="submission:needs-work"
+            message="🛠️ @$AUTHOR 的 Submission 需要继续完善。请根据评审意见更新成果或验证信息。"
+          fi
+
+          id="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!,$label:String!){repository(owner:$owner,name:$name){label(name:$label){id}}}' \
+              -F owner="$GITHUB_REPOSITORY_OWNER" -F name="$repo_name" -F label="$label" \
+              --jq '.data.repository.label.id'
+          )"
+
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$label:ID!){addLabelsToLabelable(input:{labelableId:$discussion,labelIds:[$label]}){clientMutationId}}' \
+            -F discussion="$DISCUSSION_ID" -F label="$id" >/dev/null
+
+          gh api graphql \
+            -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+            -F discussion="$DISCUSSION_ID" -f body="$message" >/dev/null
