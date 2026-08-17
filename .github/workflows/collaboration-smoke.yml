@@ -1,0 +1,127 @@
+name: 协作规则检查
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/**'
+      - '.github/workflows/discussion-governance.yml'
+      - '.github/workflows/lingxi-pr-governance.yml'
+      - '.github/workflows/collaboration-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  roles:
+    name: 角色与 Team
+    runs-on: ubuntu-latest
+    steps:
+      - name: 读取 Team
+        id: teams
+        env:
+          TEAM_TOKEN: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TEAM_TOKEN:-}" ]; then
+            echo "::error::组织协作凭据不可用。"
+            exit 1
+          fi
+
+          mentors="$(GH_TOKEN="$TEAM_TOKEN" gh api '/orgs/LingXi-Org/teams/mentors/members?per_page=100')"
+          builders="$(GH_TOKEN="$TEAM_TOKEN" gh api '/orgs/LingXi-Org/teams/builders/members?per_page=100')"
+
+          mentor_count="$(jq 'length' <<<"$mentors")"
+          builder_count="$(jq 'length' <<<"$builders")"
+          owner_in_mentors="$(jq -r 'any(.login == "leecyang")' <<<"$mentors")"
+
+          if [ "$owner_in_mentors" != "true" ]; then
+            echo "::error::leecyang 当前不在 Mentors Team。"
+            exit 1
+          fi
+
+          mentor_sample="$(jq -r '[.[] | select(.login != "leecyang")][0].login // ""' <<<"$mentors")"
+          contributor_sample="$(jq -r --argjson mentors "$mentors" '
+            [ .[] | select(.login != "leecyang") | select(.login as $u | ($mentors | any(.login == $u) | not)) ][0].login // ""
+          ' <<<"$builders")"
+
+          echo "mentor_sample=$mentor_sample" >> "$GITHUB_OUTPUT"
+          echo "contributor_sample=$contributor_sample" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Team 状态"
+            echo
+            echo "- Mentors：$mentor_count 人"
+            echo "- Builders：$builder_count 人"
+            echo "- Owner：已加入 Mentors"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Owner PR
+        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@polish/community-copy-and-smoke
+        with:
+          github_token: ${{ github.token }}
+          team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
+          org_name: LingXi-Org
+          owner_login: leecyang
+          mentor_team: mentors
+          repository: ${{ github.repository }}
+          pr_number: ${{ github.event.pull_request.number || 1 }}
+          author: leecyang
+          head_sha: ${{ github.sha }}
+          check_only: "true"
+          expected_role: owner
+
+      - name: Mentor PR
+        if: steps.teams.outputs.mentor_sample != ''
+        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@polish/community-copy-and-smoke
+        with:
+          github_token: ${{ github.token }}
+          team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
+          org_name: LingXi-Org
+          owner_login: leecyang
+          mentor_team: mentors
+          repository: ${{ github.repository }}
+          pr_number: ${{ github.event.pull_request.number || 1 }}
+          author: ${{ steps.teams.outputs.mentor_sample }}
+          head_sha: ${{ github.sha }}
+          check_only: "true"
+          expected_role: mentor
+
+      - name: Builder PR
+        if: steps.teams.outputs.contributor_sample != ''
+        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@polish/community-copy-and-smoke
+        with:
+          github_token: ${{ github.token }}
+          team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
+          org_name: LingXi-Org
+          owner_login: leecyang
+          mentor_team: mentors
+          repository: ${{ github.repository }}
+          pr_number: ${{ github.event.pull_request.number || 1 }}
+          author: ${{ steps.teams.outputs.contributor_sample }}
+          head_sha: ${{ github.sha }}
+          check_only: "true"
+          expected_role: contributor
+
+      - name: 场景覆盖
+        env:
+          MENTOR_SAMPLE: ${{ steps.teams.outputs.mentor_sample }}
+          CONTRIBUTOR_SAMPLE: ${{ steps.teams.outputs.contributor_sample }}
+        run: |
+          {
+            echo "## 当前可验证场景"
+            echo
+            echo "- Owner PR：已验证"
+            if [ -n "$MENTOR_SAMPLE" ]; then
+              echo "- Mentor PR：已验证"
+            else
+              echo "- Mentor PR：当前没有其他 Mentor，可在新增导师后自动覆盖"
+            fi
+            if [ -n "$CONTRIBUTOR_SAMPLE" ]; then
+              echo "- Builder PR：已验证"
+            else
+              echo "- Builder PR：当前没有仅属于 Builders 的成员，可在新增成员后自动覆盖"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
