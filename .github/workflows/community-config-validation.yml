@@ -83,5 +83,8 @@ jobs:
           raise '定时发布必须继续受 DISCUSSIONS_AUTOMATION_ENABLED 控制' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
           raise '需求审批命令必须继续保留 /approve' unless governance.include?('/approve')
           raise '任务验收命令必须继续保留 /accept' unless governance.include?('/accept')
+          raise '社区发布器不得依赖 updateDiscussion 修改既有自动公告' if publisher.include?('updateDiscussion')
+          raise '中文组织总览必须使用独立迁移标识' unless publisher.include?('organization-overview:zh-v1')
+          raise '中文开发快照必须使用独立迁移标识' unless publisher.include?('development-snapshot:zh-v1')
 
           puts "已校验 #{forms.length} 个 Discussion 表单和 #{workflow_paths.length} 个社区工作流。"
