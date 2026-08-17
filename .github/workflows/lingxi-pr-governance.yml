@@ -1,4 +1,4 @@
-name: PR 审批治理
+name: PR 审阅
 
 on:
   pull_request:
@@ -12,10 +12,10 @@ permissions:
 
 jobs:
   approval-gate:
-    name: PR 审批门禁
+    name: 审阅要求
     runs-on: ubuntu-latest
     steps:
-      - name: 执行 LingXi PR 审批策略
+      - name: 检查审阅要求
         uses: LingXi-Org/.github/.github/actions/pr-approval-gate@main
         with:
           github_token: ${{ github.token }}
