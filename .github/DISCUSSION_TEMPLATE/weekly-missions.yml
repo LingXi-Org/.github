@@ -3,7 +3,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        每周任务用于发布可独立完成、可验证、可复用的共建任务。每个任务应给出明确交付物和验收标准。
+        每周任务是 LingXi 的开放式共建任务，不要求一定写代码。任务可以要求提交文档、外部链接、技术札记、PR、实验结果，也可以直接指向某个 Issue，或不要求独立提交。
   - type: input
     id: mission_id
     attributes:
@@ -15,36 +15,69 @@ body:
   - type: textarea
     id: objective
     attributes:
-      label: 目标
-      description: 本周希望参与者最终完成什么？
+      label: 任务目标
+      description: 说明参与者最终需要完成、理解或验证什么。
     validations:
       required: true
   - type: textarea
     id: context
     attributes:
       label: 背景
-      description: 为什么值得做，以及它与 LingXi 当前开发方向的关系。
+      description: 为什么值得做，以及它与 LingXi 当前开发、研究或学习方向的关系。
+    validations:
+      required: true
+  - type: dropdown
+    id: deliverable_mode
+    attributes:
+      label: 主要完成方式
+      description: 选择最接近本任务的完成方式；具体要求以任务说明为准。
+      options:
+        - 文档 / 报告
+        - 外部链接 / 作品
+        - 技术札记（Engineering Notes）
+        - 代码 / Pull Request
+        - 实验 / Demo
+        - 直接参与指定 Issue
+        - 无需独立提交
+        - 不限形式
+    validations:
+      required: true
+  - type: dropdown
+    id: submission_required
+    attributes:
+      label: 是否需要在「任务提交」中独立提交
+      options:
+        - 需要
+        - 不需要
     validations:
       required: true
   - type: textarea
-    id: deliverables
+    id: requirements
     attributes:
-      label: 交付物
-      description: 明确要求提交的代码、拉取请求、演示、文档、实验结果或其他工件。
+      label: 任务说明与完成要求
+      description: 可以说明需要提交什么，也可以明确写“无需提交，只需完成指定阅读、讨论或 Issue 参与”。
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: 验收标准
-      description: 给出可以直接判断是否完成的标准。
+      label: 完成条件 / 验收标准
+      description: 给出判断任务是否完成的标准；对于无需提交的任务，也应说明完成条件。
     validations:
       required: true
+  - type: input
+    id: linked_issue
+    attributes:
+      label: 关联 Issue
+      description: 可选。如果任务直接指向某个开发 Issue，在这里填写链接。
+      placeholder: "https://github.com/LingXi-Org/.../issues/..."
+    validations:
+      required: false
   - type: textarea
     id: references
     attributes:
       label: 参考资料
-      description: 相关仓库、议题、文档、代码位置或学习材料。
+      description: 相关仓库、Issue、文档、代码位置、论文或学习材料。
     validations:
       required: false
   - type: input

@@ -3,7 +3,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        每位参与者应为自己的成果创建独立提交。请关联对应的每周任务，并提供可复现的验证信息。
+        仅当每周任务要求“独立提交”时使用本表单。成果不限定为代码：可以直接填写文档，也可以提交外部链接、技术札记、PR、Demo、实验报告等。请至少填写“成果链接”或“提交内容”中的一项。
   - type: input
     id: mission_url
     attributes:
@@ -13,50 +13,68 @@ body:
     validations:
       required: true
   - type: dropdown
+    id: submission_type
+    attributes:
+      label: 成果类型
+      options:
+        - 文档 / 报告（直接填写）
+        - 外部链接 / 作品
+        - 技术札记（Engineering Notes）
+        - Pull Request
+        - Issue 参与结果
+        - Demo / 实验结果
+        - 仓库 / 项目
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
     id: target_repository
     attributes:
-      label: 目标仓库
+      label: 关联仓库
       options:
         - LingxiLearn
         - LingxiGraph
         - LingxiSkills
         - LingxiIdentity
         - LingxiNext
+        - .github / 组织社区
+        - 无需代码仓库
         - 独立 / 外部仓库
     validations:
       required: true
   - type: input
     id: artifact_url
     attributes:
-      label: 拉取请求、仓库或演示链接
-      description: 提供主要交付物的可访问链接。
+      label: 成果链接
+      description: 可选。可以填写技术札记、PR、Issue、仓库、文档、Demo 或其他作品链接。
+      placeholder: "https://..."
     validations:
-      required: true
+      required: false
+  - type: textarea
+    id: submitted_content
+    attributes:
+      label: 提交内容
+      description: 可选。可以直接在这里提交短文档、报告、结论或成果正文；如果成果全部在链接中，可简要说明。
+    validations:
+      required: false
   - type: textarea
     id: result
     attributes:
-      label: 完成内容
-      description: 简要说明完成了什么，以及与任务要求的对应关系。
-    validations:
-      required: true
-  - type: textarea
-    id: design
-    attributes:
-      label: 设计与实现
-      description: 说明关键设计选择，不要粘贴大段代码。
+      label: 完成说明
+      description: 说明你完成了什么，以及它如何对应任务要求。
     validations:
       required: true
   - type: textarea
     id: validation
     attributes:
-      label: 验证
-      description: 提供测试、截图、性能数据或复现步骤。
+      label: 验证 / 证据
+      description: 可选。可提供测试结果、截图、数据、复现步骤或其他证据。
     validations:
-      required: true
+      required: false
   - type: textarea
     id: reflection
     attributes:
       label: 复盘
-      description: 可选。记录遇到的问题、取舍和后续可以继续改进的方向。
+      description: 可选。记录遇到的问题、取舍、收获和后续可以继续改进的方向。
     validations:
       required: false

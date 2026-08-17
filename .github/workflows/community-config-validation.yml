@@ -7,6 +7,7 @@ on:
       - '.github/workflows/discussion-governance.yml'
       - '.github/workflows/community-publisher.yml'
       - '.github/workflows/community-config-validation.yml'
+      - '.github/actions/**'
       - 'docs/community-discussions.md'
   workflow_dispatch:
 
@@ -15,7 +16,7 @@ permissions:
 
 jobs:
   validate:
-    name: 校验讨论表单与工作流
+    name: 校验讨论表单与治理工作流
     runs-on: ubuntu-latest
     steps:
       - name: 检出源码
@@ -38,7 +39,6 @@ jobs:
             'submissions' => '.github/DISCUSSION_TEMPLATE/submissions.yml',
             'engineering-notes' => '.github/DISCUSSION_TEMPLATE/engineering-notes.yml'
           }
-
           expected_titles = {
             'announcements' => '[公告] ',
             'ideas-and-requests' => '[需求] ',
@@ -47,56 +47,65 @@ jobs:
             'engineering-notes' => '[技术札记] '
           }
 
+          parsed = {}
           forms.each do |slug, path|
             raise "缺少文件：#{path}" unless File.file?(path)
             data = YAML.safe_load(File.read(path), aliases: false)
+            parsed[slug] = data
             raise "#{path}：body 必须是非空数组" unless data.is_a?(Hash) && data['body'].is_a?(Array) && !data['body'].empty?
             raise "#{path}：至少需要一个非 markdown 字段" unless data['body'].any? { |field| field['type'] != 'markdown' }
             raise "#{path}：标题前缀必须为 #{expected_titles[slug]}" unless data['title'] == expected_titles[slug]
-
             ids = data['body'].filter_map { |field| field['id'] }
             raise "#{path}：存在重复字段 id" unless ids.uniq.length == ids.length
-
-            labels = data['body'].filter_map { |field| field.dig('attributes', 'label') }
-            raise "#{path}：字段名称不得继续使用中英双语斜杠格式" if labels.any? { |label| label.include?(' / ') }
           end
 
-          forbidden_files = %w[
-            公告.yml
-            想法与需求.yml
-            每周任务.yml
-            任务提交.yml
-            技术札记.yml
-            form-test.yml
-          ]
+          weekly_ids = parsed['weekly-missions']['body'].filter_map { |f| f['id'] }
+          %w[deliverable_mode submission_required requirements linked_issue].each do |id|
+            raise "每周任务缺少字段：#{id}" unless weekly_ids.include?(id)
+          end
+          submission_ids = parsed['submissions']['body'].filter_map { |f| f['id'] }
+          %w[submission_type artifact_url submitted_content].each do |id|
+            raise "任务提交缺少字段：#{id}" unless submission_ids.include?(id)
+          end
+
+          forbidden_files = %w[公告.yml 想法与需求.yml 每周任务.yml 任务提交.yml 技术札记.yml form-test.yml]
           forbidden_files.each do |name|
             path = File.join('.github/DISCUSSION_TEMPLATE', name)
             raise "不应保留临时或中文 slug 表单：#{path}" if File.exist?(path)
           end
 
-          workflow_paths = %w[
+          required_files = %w[
             .github/workflows/discussion-governance.yml
             .github/workflows/community-publisher.yml
+            .github/actions/pr-approval-gate/action.yml
+            .github/actions/issue-approval/action.yml
           ]
-
-          workflow_paths.each do |path|
+          required_files.each do |path|
             raise "缺少文件：#{path}" unless File.file?(path)
             YAML.safe_load(File.read(path), aliases: false)
           end
 
           governance = File.read('.github/workflows/discussion-governance.yml')
           publisher = File.read('.github/workflows/community-publisher.yml')
+          pr_gate = File.read('.github/actions/pr-approval-gate/action.yml')
+          issue_gate = File.read('.github/actions/issue-approval/action.yml')
 
           %w[ideas-and-requests weekly-missions submissions engineering-notes].each do |slug|
             raise "治理工作流未引用英文分类 slug：#{slug}" unless governance.include?(slug)
           end
-
+          %w[MENTOR_ONE MENTOR_TWO MISSION_AUDIENCE_TEAM].each do |key|
+            raise "治理工作流缺少组织变量：#{key}" unless governance.include?(key)
+          end
+          %w[/approve /accept /needs-work /close-mission].each do |command|
+            raise "治理工作流缺少命令：#{command}" unless governance.include?(command)
+          end
+          raise '需求批准后的 Issue 必须带审批标记' unless governance.include?('lingxi-governance:issue-approved-by:')
           raise '发布工作流必须指向 announcements 分类' unless publisher.include?('ANNOUNCEMENTS_SLUG: announcements')
           raise '定时发布必须继续受 DISCUSSIONS_AUTOMATION_ENABLED 控制' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
-          raise '需求审批命令必须继续保留 /approve' unless governance.include?('/approve')
-          raise '任务验收命令必须继续保留 /accept' unless governance.include?('/accept')
           raise '社区发布器不得依赖 updateDiscussion 修改既有自动公告' if publisher.include?('updateDiscussion')
-          raise '中文组织总览必须使用独立迁移标识' unless publisher.include?('organization-overview:zh-v1')
-          raise '中文开发快照必须使用独立迁移标识' unless publisher.include?('development-snapshot:zh-v1')
 
-          puts "已校验 #{forms.length} 个中文内容、英文 slug 的讨论表单和 #{workflow_paths.length} 个社区工作流。"
+          raise 'PR 门禁必须支持管理员本人自动通过' unless pr_gate.include?('管理员本人 PR 自动通过治理审批')
+          raise 'PR 门禁必须识别两位导师' unless pr_gate.include?('MENTOR_ONE') && pr_gate.include?('MENTOR_TWO')
+          raise 'Issue 审批必须保留 /approve-issue' unless issue_gate.include?('/approve-issue')
+
+          puts "社区讨论、作业、Issue 与 PR 三人治理配置校验通过。"
