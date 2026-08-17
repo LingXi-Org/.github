@@ -24,7 +24,7 @@ permissions:
 env:
   ORG_NAME: LingXi-Org
   SOURCE_REPO: .github
-  ANNOUNCEMENTS_SLUG: 公告
+  ANNOUNCEMENTS_SLUG: announcements
 
 jobs:
   bootstrap:
@@ -48,7 +48,7 @@ jobs:
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
 
           if [ -z "$repo_id" ] || [ -z "$category_id" ]; then
-            echo "::error::未找到中文分类“公告”。请确认组织讨论区来源仓库为 LingXi-Org/.github。"
+            echo "::error::未找到公告分类的英文 slug：announcements。请确认分类显示名为中文“公告”，底层 slug 为 announcements。"
             exit 1
           fi
 
@@ -131,7 +131,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到中文分类“公告”。"; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类的英文 slug：announcements。"; exit 1; }
 
           discussions="$(jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context")"
 
@@ -309,7 +309,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到中文分类“公告”。"; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类的英文 slug：announcements。"; exit 1; }
 
           if [ "$BOOTSTRAP" = "true" ]; then
             since="$(date -u -d '30 days ago' +%F)"
