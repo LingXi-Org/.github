@@ -18,6 +18,9 @@ jobs:
     name: 角色与 Team
     runs-on: ubuntu-latest
     steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
       - name: 读取 Team
         id: teams
         env:
@@ -59,7 +62,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Owner PR
-        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@polish/community-copy-and-smoke
+        uses: ./.github/actions/pr-approval-gate
         with:
           github_token: ${{ github.token }}
           team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
@@ -75,7 +78,7 @@ jobs:
 
       - name: Mentor PR
         if: steps.teams.outputs.mentor_sample != ''
-        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@polish/community-copy-and-smoke
+        uses: ./.github/actions/pr-approval-gate
         with:
           github_token: ${{ github.token }}
           team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
@@ -91,7 +94,7 @@ jobs:
 
       - name: Builder PR
         if: steps.teams.outputs.contributor_sample != ''
-        uses: LingXi-Org/.github/.github/actions/pr-approval-gate@polish/community-copy-and-smoke
+        uses: ./.github/actions/pr-approval-gate
         with:
           github_token: ${{ github.token }}
           team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
@@ -117,11 +120,11 @@ jobs:
             if [ -n "$MENTOR_SAMPLE" ]; then
               echo "- Mentor PR：已验证"
             else
-              echo "- Mentor PR：当前没有其他 Mentor，可在新增导师后自动覆盖"
+              echo "- Mentor PR：当前没有其他 Mentor，新增导师后会自动覆盖"
             fi
             if [ -n "$CONTRIBUTOR_SAMPLE" ]; then
               echo "- Builder PR：已验证"
             else
-              echo "- Builder PR：当前没有仅属于 Builders 的成员，可在新增成员后自动覆盖"
+              echo "- Builder PR：当前没有仅属于 Builders 的成员，新增成员后会自动覆盖"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
