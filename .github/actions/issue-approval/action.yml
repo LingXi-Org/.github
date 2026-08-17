@@ -1,0 +1,105 @@
+name: LingXi Issue 审批
+description: 开发 Issue 由管理员或两位导师中的任意一人批准
+inputs:
+  github_token:
+    required: true
+  owner_login:
+    required: true
+  mentor_one:
+    required: false
+  mentor_two:
+    required: false
+  repository:
+    required: true
+  event_name:
+    required: true
+  issue_number:
+    required: true
+  issue_author:
+    required: false
+  issue_body:
+    required: false
+  actor:
+    required: true
+  comment_body:
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: 处理 Issue 审批
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        OWNER_LOGIN: ${{ inputs.owner_login }}
+        MENTOR_ONE: ${{ inputs.mentor_one }}
+        MENTOR_TWO: ${{ inputs.mentor_two }}
+        REPOSITORY: ${{ inputs.repository }}
+        EVENT_NAME: ${{ inputs.event_name }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        ISSUE_AUTHOR: ${{ inputs.issue_author }}
+        ISSUE_BODY: ${{ inputs.issue_body }}
+        ACTOR: ${{ inputs.actor }}
+        COMMENT_BODY: ${{ inputs.comment_body }}
+      run: |
+        set -euo pipefail
+
+        ensure_label() {
+          gh label create "$1" --repo "$REPOSITORY" --color "$2" --description "$3" --force >/dev/null
+        }
+        add_label() {
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPOSITORY" --add-label "$1" >/dev/null
+        }
+        remove_label() {
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPOSITORY" --remove-label "$1" >/dev/null 2>&1 || true
+        }
+        comment() {
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "$1" >/dev/null
+        }
+        reviewers="@$OWNER_LOGIN"
+        [ -n "${MENTOR_ONE:-}" ] && reviewers="$reviewers @$MENTOR_ONE"
+        [ -n "${MENTOR_TWO:-}" ] && reviewers="$reviewers @$MENTOR_TWO"
+
+        ensure_label "issue:review" "FBCA04" "等待治理者批准"
+        ensure_label "issue:approved" "0E8A16" "开发 Issue 已批准"
+        ensure_label "issue:declined" "B60205" "开发 Issue 当前未批准"
+
+        if [ "$EVENT_NAME" = "issues" ]; then
+          if grep -Fq '<!-- lingxi-governance:issue-approved-by:' <<<"${ISSUE_BODY:-}"; then
+            approver="$(sed -n 's/.*<!-- lingxi-governance:issue-approved-by:\([^ >]*\).*/\1/p' <<<"$ISSUE_BODY" | head -n1)"
+            add_label "issue:approved"
+            remove_label "issue:review"
+            remove_label "issue:declined"
+            comment "✅ 该 Issue 来自已审批的组织需求讨论，批准者：@${approver:-unknown}。无需再次审批，可以进入开发。"
+          else
+            add_label "issue:review"
+            comment "$reviewers 新开发 Issue 等待审批。三人任意一人回复 \`/approve-issue\` 即可进入开发；回复 \`/decline-issue\` 可标记为暂不开发。"
+          fi
+          exit 0
+        fi
+
+        command="$(printf '%s' "${COMMENT_BODY:-}" | tr -d '\r' | sed -e 's/[[:space:]]*$//')"
+        case "$command" in
+          /approve-issue|/decline-issue) ;;
+          *) exit 0 ;;
+        esac
+
+        authorized=false
+        for user in "$OWNER_LOGIN" "${MENTOR_ONE:-}" "${MENTOR_TWO:-}"; do
+          if [ -n "$user" ] && [ "$ACTOR" = "$user" ]; then authorized=true; fi
+        done
+        if [ "$authorized" != "true" ]; then
+          echo "@$ACTOR 不在 Issue 审批人名单中，忽略命令。"
+          exit 0
+        fi
+
+        if [ "$command" = "/approve-issue" ]; then
+          add_label "issue:approved"
+          remove_label "issue:review"
+          remove_label "issue:declined"
+          comment "✅ 该开发 Issue 已由 @$ACTOR 批准，可以进入开发。"
+        else
+          add_label "issue:declined"
+          remove_label "issue:review"
+          remove_label "issue:approved"
+          comment "该 Issue 已由 @$ACTOR 标记为暂不进入开发；如有新信息可以继续讨论后重新审批。"
+        fi
