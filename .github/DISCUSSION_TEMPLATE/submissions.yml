@@ -1,62 +1,62 @@
-title: "[Submission] "
+title: "[任务提交] "
 body:
   - type: markdown
     attributes:
       value: |
-        每位参与者为自己的成果创建独立 Submission。请关联对应 Weekly Mission，并提供可复现的验证信息。
+        每位参与者应为自己的成果创建独立提交。请关联对应的每周任务，并提供可复现的验证信息。
   - type: input
     id: mission_url
     attributes:
-      label: 关联任务 / Mission discussion
-      description: 对应 Weekly Mission 的 Discussion 链接。
+      label: 关联任务
+      description: 填写对应每周任务的 Discussion 链接。
       placeholder: "https://github.com/orgs/LingXi-Org/discussions/..."
     validations:
       required: true
   - type: dropdown
     id: target_repository
     attributes:
-      label: 目标仓库 / Target repository
+      label: 目标仓库
       options:
         - LingxiLearn
         - LingxiGraph
         - LingxiSkills
         - LingxiIdentity
         - LingxiNext
-        - Independent / External repository
+        - 独立 / 外部仓库
     validations:
       required: true
   - type: input
     id: artifact_url
     attributes:
-      label: PR、仓库或 Demo / Artifact URL
+      label: 拉取请求、仓库或演示链接
       description: 提供主要交付物的可访问链接。
     validations:
       required: true
   - type: textarea
     id: result
     attributes:
-      label: 完成内容 / Result
+      label: 完成内容
       description: 简要说明完成了什么，以及与任务要求的对应关系。
     validations:
       required: true
   - type: textarea
     id: design
     attributes:
-      label: 设计与实现 / Design and implementation
+      label: 设计与实现
       description: 说明关键设计选择，不要粘贴大段代码。
     validations:
       required: true
   - type: textarea
     id: validation
     attributes:
-      label: 验证 / Validation
+      label: 验证
       description: 提供测试、截图、性能数据或复现步骤。
     validations:
       required: true
   - type: textarea
     id: reflection
     attributes:
-      label: 复盘 / Reflection
+      label: 复盘
       description: 可选。记录遇到的问题、取舍和后续可以继续改进的方向。
     validations:
       required: false
