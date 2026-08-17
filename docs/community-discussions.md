@@ -1,61 +1,39 @@
-# LingXi 组织 Discussions 与开发治理说明
+# LingXi 社区协作
 
-LingXi 使用 Organization Discussions 作为跨仓库社区入口。需求讨论、每周共建、成果提交、技术文章和官方公告在这里进行；具体实现任务仍在目标仓库的 Issue 与 Pull Request 中跟踪。
+LingXi 使用 Organization Discussions 作为统一的社区入口。这里用于提出需求、发布每周任务、提交成果、分享技术札记和发布公告；进入开发后的具体工作由目标仓库的 Issue 与 Pull Request 跟踪。
 
-## 语言与技术标识约定
+## 分类
 
-社区界面、表单字段、机器人回复和文档统一使用中文。分类 slug、Discussion Form 文件名、维护命令、状态标签、仓库名和环境变量保持英文。
-
-**分类显示名可以是中文，但 slug 必须保持英文。** 中文 slug 已通过实际 A/B 测试确认会导致 GitHub Discussion Category Form 无法正常渲染结构化表单。
-
-## 来源仓库与分类
-
-来源仓库：`LingXi-Org/.github`
-
-| 中文显示名称 | 格式 | slug |
+| 分类 | 用途 | slug |
 | --- | --- | --- |
-| `公告` | Announcement | `announcements` |
-| `想法与需求` | Open-ended | `ideas-and-requests` |
-| `共建实验室` | Section | — |
-| `每周任务` | Announcement | `weekly-missions` |
-| `任务提交` | Open-ended | `submissions` |
-| `技术札记` | Open-ended | `engineering-notes` |
+| 公告 | 重要动态、版本与项目进展 | `announcements` |
+| 想法与需求 | 提出新的产品或工程需求 | `ideas-and-requests` |
+| 共建实验室 | 每周任务与成果提交 | — |
+| 每周任务 | 导师发布开放式共建任务 | `weekly-missions` |
+| 任务提交 | 提交任务成果 | `submissions` |
+| 技术札记 | 分享可复用的工程与研究经验 | `engineering-notes` |
 
-对应表单文件保持英文文件名：`announcements.yml`、`ideas-and-requests.yml`、`weekly-missions.yml`、`submissions.yml`、`engineering-notes.yml`。
+分类显示名使用中文，slug 和 Discussion Form 文件名保持英文。
 
-## Team 权限模型
+## 角色
 
-LingXi 使用两个 Team：
+- **Mentors**：发布任务、确认需求和 Issue、验收任务成果、参与 PR 审阅。
+- **Builders**：参与任务、提出需求、开发 Issue、提交 PR。
+- **Owner (`leecyang`)**：拥有组织管理权限，同时参与 Mentors 的工作。
 
-- `Mentors`（slug：`mentors`）：导师与治理者。人数不限。
-- `Builders`（slug：`builders`）：参与每周任务和项目共建的成员。
+PR 审阅规则：
 
-`leecyang` 是 Organization Owner，并始终具有 Mentor 治理权限；为了组织结构清晰，也建议加入 `Mentors` Team。
+- `leecyang` 提交的 PR：无需额外批准。
+- 其他 Mentor 提交的 PR：需要 `leecyang` 批准。
+- Builder 或外部贡献者提交的 PR：需要任意 2 位 Mentors 批准。
 
-治理规则：
+除 PR 外，需求、Issue、任务关闭和成果验收都只需要任意 1 位 Mentor 处理。
 
-- `leecyang` 自己的 PR：无需任何人工审批，`PR 审批门禁` 自动通过。
-- 其他 `Mentors` 成员的 PR：只需要 `leecyang` 一人 Approve。
-- `Builders` 或外部贡献者的 PR：需要任意 2 名 Mentors Approve；`leecyang` 可以计入其中 1 人。
-- Discussion 需求审批、Issue 审批、每周任务发布、任务关闭和任务提交验收：任意 1 名 Mentor 即可。
-- Team 成员变化无需修改代码或用户名变量。
+## 想法与需求
 
-PR 审批只统计当前 PR head SHA 上的有效 Approve；提交新 commit 后需要按当前代码重新满足门禁。
+成员先在“想法与需求”中说明场景、问题和期望结果。
 
-## 自动通知
-
-工作流会自动通知对应角色：
-
-- 新“想法与需求” → `@LingXi-Org/mentors`
-- 新开发 Issue → `@LingXi-Org/mentors`
-- Mentor PR → 自动请求并 `@leecyang`
-- Builder / 外部贡献者 PR → 自动请求 `Mentors` Team Review 并 `@LingXi-Org/mentors`
-- 新“每周任务” → `@LingXi-Org/builders`
-- 新“任务提交” → `@LingXi-Org/mentors`
-
-## 想法与需求 → Issue
-
-创建需求后机器人添加 `proposal:review` 并通知 Mentors。任意 Mentor 可以使用：
+任意 Mentor 可以回复：
 
 ```text
 /approve
@@ -63,35 +41,35 @@ PR 审批只统计当前 PR head SHA 上的有效 Approve；提交新 commit 后
 /decline
 ```
 
-批准后添加 `proposal:approved`，机器人生成目标仓库的预填 Issue 创建入口。由该入口创建的 Issue 会自动识别为已审批，无需第二次审批。
+通过后会提供目标仓库的 Issue 创建入口。
 
-## 直接创建的开发 Issue
+## Issue
 
-直接在代码仓库中新建的 Issue 会添加 `issue:review` 并通知 Mentors。任意 Mentor 可以使用：
+从已确认需求创建的 Issue 可以直接进入开发。
+
+直接创建的开发 Issue 需要一位 Mentor 确认：
 
 ```text
 /approve-issue
 /decline-issue
 ```
 
-对应状态：`issue:approved` / `issue:declined`。
-
 ## 每周任务
 
-每周任务是开放式作业，不要求一定写代码。任务可以要求：
+每周任务不限定为代码。可以是：
 
-- 文档 / 报告
-- 外部链接 / 作品
-- Engineering Notes 技术札记
-- PR
-- 实验 / Demo
-- 直接参与指定 Issue
-- 无需独立提交
+- 文档或报告
+- 外部作品或链接
+- 技术札记
+- Pull Request
+- 实验或 Demo
+- 参与指定 Issue
+- 无需单独提交
 - 不限形式
 
-只有 Owner 或 Mentors 成员应发布每周任务；`.github` 来源仓库应给 `Mentors` Team `Maintain` 权限。任务发布后自动 `@LingXi-Org/builders`。
+任务发布后会自动通知 `@LingXi-Org/builders`。
 
-任务结束时任意 Mentor 可以回复：
+任务结束时，任意 Mentor 可以回复：
 
 ```text
 /close-mission
@@ -99,7 +77,7 @@ PR 审批只统计当前 PR head SHA 上的有效 Approve；提交新 commit 后
 
 ## 任务提交
 
-仅当任务要求独立提交时使用“任务提交”。成果可以直接写文档正文，也可以提供外部链接、Engineering Notes、PR、Issue 参与结果、Demo、仓库等。
+仅在任务要求单独提交成果时使用。成果可以直接写在正文中，也可以提供链接。
 
 任意 Mentor 可以回复：
 
@@ -108,24 +86,33 @@ PR 审批只统计当前 PR head SHA 上的有效 Approve；提交新 commit 后
 /needs-work
 ```
 
-## Team membership 读取凭据
+## 技术札记
 
-仓库自带 `GITHUB_TOKEN` 可以进行 PR/Issue/Discussion 写操作，但不能读取 Organization Team 成员，因此需要独立 Secret：
+“技术札记”用于沉淀架构设计、工程经验、实验结论和研究思考。内容应尽量独立、完整并可长期检索。
+
+## 自动通知
+
+- 新需求 → `@LingXi-Org/mentors`
+- 新开发 Issue → `@LingXi-Org/mentors`
+- Mentor PR → `@leecyang`
+- Builder / 外部贡献者 PR → `@LingXi-Org/mentors`
+- 新每周任务 → `@LingXi-Org/builders`
+- 新任务提交 → `@LingXi-Org/mentors`
+
+## 维护配置
+
+来源仓库：`LingXi-Org/.github`
+
+必需 Secret：
 
 ```text
 ORG_GOVERNANCE_TOKEN
 ```
 
-该凭据只用于读取 `Mentors` Team membership。真正的评论、标签、Reviewer 请求仍使用每个仓库自己的 `GITHUB_TOKEN`。
+该 Secret 只用于读取 Mentors Team 成员。邀请成员使用的 `ORG_INVITE_TOKEN` 与它保持独立。
 
-不要复用 `ORG_INVITE_TOKEN`；邀请成员与治理 Team membership 是两条独立权限链。
-
-## 社区内容发布
-
-`.github/workflows/community-publisher.yml` 提供 `bootstrap`、`sync`、`digest`。定时任务仅在以下变量为 `true` 时启用：
+自动公告默认关闭。需要时再设置：
 
 ```text
 DISCUSSIONS_AUTOMATION_ENABLED=true
 ```
-
-若不希望自动发布，不设置该变量即可。组织级软件包读取仍使用独立 `ORG_PACKAGE_TOKEN`，不得复用其他 Token。
