@@ -48,7 +48,7 @@ jobs:
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
 
           if [ -z "$repo_id" ] || [ -z "$category_id" ]; then
-            echo "::error::未找到公告分类的英文 slug：announcements。请确认分类显示名为中文“公告”，底层 slug 为 announcements。"
+            echo "::error::未找到公告分类的英文 slug：announcements。请确认分类显示名与 slug 配置。"
             exit 1
           fi
 
@@ -71,7 +71,7 @@ jobs:
 
           LingXi 是围绕 AI 学习产品、持久化智能体运行时、开放技能体系与统一身份能力持续演进的开源工程体系。
 
-          ## 核心技术栈
+          ## 核心项目
 
           | 项目 | 定位 |
           | --- | --- |
@@ -94,12 +94,12 @@ jobs:
 
           ## 社区入口
 
-          - **想法与需求**：提出需求，在维护者审批后进入对应仓库议题。
-          - **共建实验室 / 每周任务**：参与周期性工程与研究任务。
-          - **共建实验室 / 任务提交**：提交独立成果、拉取请求、演示与验证结果。
+          - **想法与需求**：提出需求，经导师确认后进入对应仓库 Issue。
+          - **共建实验室 / 每周任务**：参与周期性的学习、研究与工程任务。
+          - **共建实验室 / 任务提交**：提交任务要求的文档、链接、技术札记、代码或其他成果。
           - **技术札记**：沉淀架构、工程、研究与实验文章。
 
-          版本发布、新仓库和每周开发摘要可以由社区自动化同步到公告分类。配置可选的 `ORG_PACKAGE_TOKEN` 后，也可以同步组织级 GHCR 软件包。
+          重要版本、新仓库和开发进展会在公告中持续更新。
           EOF
 
           title="欢迎来到 LingXi — 架构、项目与当前状态"
@@ -131,7 +131,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类的英文 slug：announcements。"; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类：announcements。"; exit 1; }
 
           discussions="$(jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context")"
 
@@ -186,8 +186,6 @@ jobs:
           LingXi 组织新增公开仓库 **$name**。
 
           **仓库地址：** $url
-
-          后续重要版本与开发进展可以继续在公告分类中发布。
           EOF
               publish_once "$marker" "[新仓库] $name" /tmp/item.md
             done < <(jq -c '.[] | select(.name != ".github")' <<<"$repos_json")
@@ -222,7 +220,7 @@ jobs:
 
           - **仓库：** https://github.com/$full_name
           - **版本页面：** $url
-          - **是否为预发布版本：** $prerelease
+          - **预发布版本：** $prerelease
 
           完整变更、安装与迁移信息以版本页面为准。
           EOF
@@ -280,8 +278,6 @@ jobs:
           - **软件包：** $package_url
           - **标签：** ${tags:-无标签}
           - **发布时间：** $created
-
-          该通知由 LingXi 社区发布器自动同步。
           EOF
               publish_once "$marker" "[软件包] $package_name ${tags:+— $tags}" /tmp/item.md
             done < <(jq -c '.[]' <<<"$versions")
@@ -309,7 +305,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类的英文 slug：announcements。"; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类：announcements。"; exit 1; }
 
           if [ "$BOOTSTRAP" = "true" ]; then
             since="$(date -u -d '30 days ago' +%F)"
