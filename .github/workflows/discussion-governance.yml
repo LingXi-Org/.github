@@ -18,10 +18,8 @@ concurrency:
 env:
   ORG_NAME: LingXi-Org
   OWNER_LOGIN: leecyang
-  MENTOR_ONE: ${{ vars.MENTOR_ONE }}
-  MENTOR_TWO: ${{ vars.MENTOR_TWO }}
-  MENTOR_TEAM: ${{ vars.MENTOR_TEAM }}
-  MISSION_AUDIENCE_TEAM: ${{ vars.MISSION_AUDIENCE_TEAM }}
+  MENTOR_TEAM: mentors
+  MISSION_AUDIENCE_TEAM: builders
 
 jobs:
   triage:
@@ -29,9 +27,10 @@ jobs:
     if: github.event_name == 'discussion' && github.event.action == 'created'
     runs-on: ubuntu-latest
     steps:
-      - name: 初始化讨论状态
+      - name: 初始化讨论状态与自动通知
         env:
           GH_TOKEN: ${{ github.token }}
+          TEAM_TOKEN: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
           CATEGORY: ${{ github.event.discussion.category.slug }}
           DISCUSSION_ID: ${{ github.event.discussion.node_id }}
           AUTHOR: ${{ github.event.discussion.user.login }}
@@ -44,14 +43,12 @@ jobs:
           ensure_label() {
             gh label create "$1" --repo "$GITHUB_REPOSITORY" --color "$2" --description "$3" --force >/dev/null
           }
-
           label_id() {
             gh api graphql \
               -f query='query($owner:String!,$name:String!,$label:String!){repository(owner:$owner,name:$name){label(name:$label){id}}}' \
               -F owner="$GITHUB_REPOSITORY_OWNER" -F name="$repo_name" -F label="$1" \
               --jq '.data.repository.label.id // ""'
           }
-
           add_label() {
             local id
             id="$(label_id "$1")"
@@ -60,47 +57,67 @@ jobs:
               -f query='mutation($discussion:ID!,$label:ID!){addLabelsToLabelable(input:{labelableId:$discussion,labelIds:[$label]}){clientMutationId}}' \
               -F discussion="$DISCUSSION_ID" -F label="$id" >/dev/null
           }
-
           comment_text() {
             gh api graphql \
               -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
               -F discussion="$DISCUSSION_ID" -f body="$1" >/dev/null
           }
-
-          reviewers="@$OWNER_LOGIN"
-          [ -n "${MENTOR_ONE:-}" ] && reviewers="$reviewers @$MENTOR_ONE"
-          [ -n "${MENTOR_TWO:-}" ] && reviewers="$reviewers @$MENTOR_TWO"
+          is_mentor() {
+            local user="$1"
+            if [ "$user" = "$OWNER_LOGIN" ]; then
+              return 0
+            fi
+            [ -n "${TEAM_TOKEN:-}" ] || return 1
+            GH_TOKEN="$TEAM_TOKEN" gh api "/orgs/$ORG_NAME/teams/$MENTOR_TEAM/memberships/$user" \
+              --jq 'select(.state == "active") | .state' >/dev/null 2>&1
+          }
 
           case "$CATEGORY" in
             ideas-and-requests)
-              ensure_label "proposal:review" "FBCA04" "等待维护者审核"
+              ensure_label "proposal:review" "FBCA04" "等待 Mentor 审核"
               ensure_label "proposal:approved" "0E8A16" "已批准进入工程 Issue"
               ensure_label "proposal:declined" "B60205" "当前不进入工程实现"
               add_label "proposal:review"
-              comment_text "$reviewers 有新的想法或需求等待审批。三人任意一人都可以回复 \`/approve\`、\`/approve LingxiSkills\` 或 \`/decline\`。批准后会为提出者生成目标仓库的预填 Issue 创建入口。"
+              comment_text "@$ORG_NAME/$MENTOR_TEAM 有新的想法或需求等待审批。任意一名 Mentor 都可以回复 \`/approve\`、\`/approve LingxiSkills\` 或 \`/decline\`。批准后会为提出者生成目标仓库的预填 Issue 创建入口。"
               ;;
 
             weekly-missions)
+              if ! is_mentor "$AUTHOR"; then
+                ensure_label "mission:unauthorized" "B60205" "非 Mentor 发布的任务"
+                add_label "mission:unauthorized"
+                comment_text "@$AUTHOR 当前每周任务仅允许 @$ORG_NAME/$MENTOR_TEAM 成员发布，请联系 Mentor 重新发布或调整权限。"
+                exit 0
+              fi
+
               ensure_label "mission:open" "1D76DB" "每周任务进行中"
               ensure_label "mission:closed" "6E7781" "每周任务已结束"
               add_label "mission:open"
 
-              submission_required="$(python3 - <<'PY'
+              readarray -t mission_meta < <(python3 - <<'PY'
           import os, re
           body = os.environ.get('DISCUSSION_BODY', '')
-          m = re.search(r'(?ms)^### 是否需要在「任务提交」中独立提交\s*\n+\s*([^\n]+)', body)
-          print(m.group(1).strip() if m else '')
+          def field(label):
+              m = re.search(rf'(?ms)^### {re.escape(label)}\s*\n+\s*([^\n]+)', body)
+              return m.group(1).strip() if m else ''
+          print(field('是否需要在「任务提交」中独立提交'))
+          print(field('关联 Issue'))
+          print(field('主要完成方式'))
           PY
-              )"
+              )
+              submission_required="${mission_meta[0]:-}"
+              linked_issue="${mission_meta[1]:-}"
+              deliverable_mode="${mission_meta[2]:-}"
+              audience="@$ORG_NAME/$MISSION_AUDIENCE_TEAM"
 
-              audience_team="${MISSION_AUDIENCE_TEAM:-builders}"
-              audience="@$ORG_NAME/$audience_team"
-              mentor_team="${MENTOR_TEAM:-mentors}"
+              extra=""
+              if [ -n "$linked_issue" ]; then
+                extra=" 关联开发任务：$linked_issue"
+              fi
 
               if [ "$submission_required" = "不需要" ]; then
-                comment_text "$audience 本周任务已开放。本任务**不要求在「任务提交」中另开提交**，请按任务正文完成即可。$reviewers 或 @$ORG_NAME/$mentor_team 可在任务结束时由三位治理者中的任意一人回复 \`/close-mission\`。"
+                comment_text "$audience 本周任务已由 Mentor @$AUTHOR 发布。主要完成方式：**${deliverable_mode:-不限形式}**。本任务**不要求在「任务提交」中另开提交**。${extra} @$ORG_NAME/$MENTOR_TEAM 任意一名 Mentor 可在任务结束时回复 \`/close-mission\`。"
               else
-                comment_text "$audience 本周任务已开放。完成后请前往 **任务提交** 创建独立成果：https://github.com/orgs/$ORG_NAME/discussions/categories/submissions 。成果可以是文档、链接、技术札记、PR、Issue 参与结果或 Demo。三位治理者中的任意一人可使用 \`/accept\` 或 \`/needs-work\` 验收。"
+                comment_text "$audience 本周任务已由 Mentor @$AUTHOR 发布。主要完成方式：**${deliverable_mode:-不限形式}**。完成后请前往 **任务提交** 创建独立成果：https://github.com/orgs/$ORG_NAME/discussions/categories/submissions 。成果可以是文档、链接、Engineering Notes、PR、Issue 参与结果或 Demo。${extra}"
               fi
               ;;
 
@@ -117,7 +134,7 @@ jobs:
           print(m.group(1).strip() if m else '')
           PY
               )"
-              comment_text "已收到 @$AUTHOR 的任务提交。关联任务：${mission_url:-未识别}。$reviewers 三人任意一人都可以回复 \`/accept\` 或 \`/needs-work\` 完成验收。"
+              comment_text "@$ORG_NAME/$MENTOR_TEAM 已收到 @$AUTHOR 的任务提交。关联任务：${mission_url:-未识别}。任意一名 Mentor 都可以回复 \`/accept\` 或 \`/needs-work\` 完成验收。"
               ;;
 
             engineering-notes)
@@ -135,14 +152,15 @@ jobs:
               ;;
           esac
 
-  moderator-command:
-    name: 处理治理命令
+  mentor-command:
+    name: 处理 Mentor 治理命令
     if: github.event_name == 'discussion_comment' && github.event.action == 'created'
     runs-on: ubuntu-latest
     steps:
-      - name: 执行三人治理命令
+      - name: 执行 Team 驱动的治理命令
         env:
           GH_TOKEN: ${{ github.token }}
+          TEAM_TOKEN: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
           CATEGORY: ${{ github.event.discussion.category.slug }}
           DISCUSSION_ID: ${{ github.event.discussion.node_id }}
           DISCUSSION_URL: ${{ github.event.discussion.html_url }}
@@ -161,17 +179,25 @@ jobs:
             *) echo "不是治理命令，跳过。"; exit 0 ;;
           esac
 
-          authorized=false
-          for user in "$OWNER_LOGIN" "${MENTOR_ONE:-}" "${MENTOR_TWO:-}"; do
-            if [ -n "$user" ] && [ "$ACTOR" = "$user" ]; then authorized=true; fi
-          done
-          if [ "$authorized" != "true" ]; then
-            echo "@$ACTOR 不在治理者名单中，忽略命令。"
+          is_mentor() {
+            local user="$1"
+            if [ "$user" = "$OWNER_LOGIN" ]; then
+              return 0
+            fi
+            [ -n "${TEAM_TOKEN:-}" ] || return 1
+            GH_TOKEN="$TEAM_TOKEN" gh api "/orgs/$ORG_NAME/teams/$MENTOR_TEAM/memberships/$user" \
+              --jq 'select(.state == "active") | .state' >/dev/null 2>&1
+          }
+
+          if ! is_mentor "$ACTOR"; then
+            gh api graphql \
+              -f query='mutation($discussion:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussion,body:$body}){comment{url}}}' \
+              -F discussion="$DISCUSSION_ID" \
+              -f body="@$ACTOR 该治理命令仅限 @$ORG_NAME/$MENTOR_TEAM 成员使用。" >/dev/null
             exit 0
           fi
 
           repo_name="${GITHUB_REPOSITORY#*/}"
-
           ensure_label() {
             gh label create "$1" --repo "$GITHUB_REPOSITORY" --color "$2" --description "$3" --force >/dev/null
           }
@@ -196,7 +222,7 @@ jobs:
           if [[ "$command" == /approve* ]] && [ "$CATEGORY" = "ideas-and-requests" ]; then
             result="$(python3 - <<'PY'
           import os, re, urllib.parse
-          allowed = {'LingxiLearn','LingxiGraph','LingxiSkills','LingxiIdentity','LingxiNext'}
+          allowed = {'LingxiLearn','LingxiGraph','LingxiSkills','LingxiIdentity','LingxiNext','Coze-Chainlit'}
           body = os.environ.get('DISCUSSION_BODY','')
           command = os.environ.get('COMMENT_BODY','').strip()
           title = os.environ.get('DISCUSSION_TITLE','').strip()
@@ -216,7 +242,7 @@ jobs:
           issue_body = f'''<!-- lingxi-governance:issue-approved-by:{actor} -->
           ## 来源
 
-          本 Issue 已在 LingXi 组织讨论区由 @{actor} 批准。
+          本 Issue 已在 LingXi 组织讨论区由 Mentor @{actor} 批准。
 
           - 原讨论：{discussion_url}
           - 提出者：@{author}
@@ -235,23 +261,23 @@ jobs:
               exit 0
             fi
             IFS='|' read -r _ target issue_url <<<"$result"
-            ensure_label "proposal:review" "FBCA04" "等待维护者审核"
+            ensure_label "proposal:review" "FBCA04" "等待 Mentor 审核"
             ensure_label "proposal:approved" "0E8A16" "已批准进入工程 Issue"
             ensure_label "proposal:declined" "B60205" "当前不进入工程实现"
             add_label "proposal:approved"
             remove_label "proposal:review"
             remove_label "proposal:declined"
-            comment_text "✅ @$ACTOR 已批准该需求。@$AUTHOR 请使用 **[在 $target 创建 Issue]($issue_url)**，创建后的 Issue 会自动识别为已审批。"
+            comment_text "✅ Mentor @$ACTOR 已批准该需求。@$AUTHOR 请使用 **[在 $target 创建 Issue]($issue_url)**，创建后的 Issue 会自动识别为已审批。"
             exit 0
           fi
 
           if [ "$command" = "/decline" ] && [ "$CATEGORY" = "ideas-and-requests" ]; then
-            ensure_label "proposal:review" "FBCA04" "等待维护者审核"
+            ensure_label "proposal:review" "FBCA04" "等待 Mentor 审核"
             ensure_label "proposal:declined" "B60205" "当前不进入工程实现"
             add_label "proposal:declined"
             remove_label "proposal:review"
             remove_label "proposal:approved"
-            comment_text "本需求当前不进入工程实现。审批者：@$ACTOR。@$AUTHOR 如有新的约束、证据或使用场景，可以继续补充后重新申请评审。"
+            comment_text "本需求当前不进入工程实现。审批者：Mentor @$ACTOR。@$AUTHOR 如有新的约束、证据或使用场景，可以继续补充后重新申请评审。"
             exit 0
           fi
 
@@ -260,7 +286,7 @@ jobs:
             ensure_label "mission:closed" "6E7781" "每周任务已结束"
             add_label "mission:closed"
             remove_label "mission:open"
-            comment_text "本周任务已由 @$ACTOR 关闭。已有成果仍可继续评审。"
+            comment_text "本周任务已由 Mentor @$ACTOR 关闭。已有成果仍可继续评审。"
             exit 0
           fi
 
@@ -271,11 +297,11 @@ jobs:
             if [ "$command" = "/accept" ]; then
               add_label "submission:accepted"
               remove_label "submission:needs-work"
-              comment_text "✅ @$AUTHOR 的任务提交已由 @$ACTOR 验收通过。"
+              comment_text "✅ @$AUTHOR 的任务提交已由 Mentor @$ACTOR 验收通过。"
             else
               add_label "submission:needs-work"
               remove_label "submission:accepted"
-              comment_text "🛠️ @$AUTHOR 的任务提交由 @$ACTOR 标记为需要继续完善，请根据评审意见更新成果。"
+              comment_text "🛠️ @$AUTHOR 的任务提交由 Mentor @$ACTOR 标记为需要继续完善，请根据评审意见更新成果。"
             fi
             exit 0
           fi

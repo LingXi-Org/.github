@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/DISCUSSION_TEMPLATE/**'
       - '.github/workflows/discussion-governance.yml'
+      - '.github/workflows/lingxi-pr-governance.yml'
       - '.github/workflows/community-publisher.yml'
       - '.github/workflows/community-config-validation.yml'
       - '.github/actions/**'
@@ -76,6 +77,7 @@ jobs:
 
           required_files = %w[
             .github/workflows/discussion-governance.yml
+            .github/workflows/lingxi-pr-governance.yml
             .github/workflows/community-publisher.yml
             .github/actions/pr-approval-gate/action.yml
             .github/actions/issue-approval/action.yml
@@ -86,6 +88,7 @@ jobs:
           end
 
           governance = File.read('.github/workflows/discussion-governance.yml')
+          pr_wrapper = File.read('.github/workflows/lingxi-pr-governance.yml')
           publisher = File.read('.github/workflows/community-publisher.yml')
           pr_gate = File.read('.github/actions/pr-approval-gate/action.yml')
           issue_gate = File.read('.github/actions/issue-approval/action.yml')
@@ -93,9 +96,11 @@ jobs:
           %w[ideas-and-requests weekly-missions submissions engineering-notes].each do |slug|
             raise "治理工作流未引用英文分类 slug：#{slug}" unless governance.include?(slug)
           end
-          %w[MENTOR_ONE MENTOR_TWO MISSION_AUDIENCE_TEAM].each do |key|
-            raise "治理工作流缺少组织变量：#{key}" unless governance.include?(key)
-          end
+          raise '治理工作流必须固定使用 mentors Team' unless governance.include?('MENTOR_TEAM: mentors')
+          raise '每周任务必须通知 builders Team' unless governance.include?('MISSION_AUDIENCE_TEAM: builders')
+          raise 'Discussion 治理必须读取 ORG_GOVERNANCE_TOKEN' unless governance.include?('ORG_GOVERNANCE_TOKEN')
+          raise '不得继续使用固定导师用户名变量' if governance.include?('MENTOR_ONE') || governance.include?('MENTOR_TWO')
+
           %w[/approve /accept /needs-work /close-mission].each do |command|
             raise "治理工作流缺少命令：#{command}" unless governance.include?(command)
           end
@@ -104,8 +109,18 @@ jobs:
           raise '定时发布必须继续受 DISCUSSIONS_AUTOMATION_ENABLED 控制' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
           raise '社区发布器不得依赖 updateDiscussion 修改既有自动公告' if publisher.include?('updateDiscussion')
 
-          raise 'PR 门禁必须支持管理员本人自动通过' unless pr_gate.include?('管理员本人 PR 自动通过治理审批')
-          raise 'PR 门禁必须识别两位导师' unless pr_gate.include?('MENTOR_ONE') && pr_gate.include?('MENTOR_TWO')
-          raise 'Issue 审批必须保留 /approve-issue' unless issue_gate.include?('/approve-issue')
+          raise 'PR 门禁必须支持管理员本人无需审批' unless pr_gate.include?('管理员本人 PR 无需人工审批')
+          raise 'PR 门禁必须通过 Team API 读取 Mentors' unless pr_gate.include?('/teams/$MENTOR_TEAM/members')
+          raise 'Builder PR 必须要求 2 名 Mentors' unless pr_gate.include?('需要任意 2 名 Mentors 审批')
+          raise 'Mentor PR 必须只要求管理员审批' unless pr_gate.include?('Mentor PR：只需要管理员')
+          raise 'PR 门禁不得继续使用固定导师用户名' if pr_gate.include?('MENTOR_ONE') || pr_gate.include?('MENTOR_TWO')
 
-          puts "社区讨论、作业、Issue 与 PR 三人治理配置校验通过。"
+          raise 'PR wrapper 必须传入 ORG_GOVERNANCE_TOKEN' unless pr_wrapper.include?('ORG_GOVERNANCE_TOKEN')
+          raise 'PR wrapper 必须固定使用 mentors Team' unless pr_wrapper.include?('mentor_team: mentors')
+          raise 'PR wrapper 不得继续使用固定导师用户名' if pr_wrapper.include?('MENTOR_ONE') || pr_wrapper.include?('MENTOR_TWO')
+
+          raise 'Issue 审批必须保留 /approve-issue' unless issue_gate.include?('/approve-issue')
+          raise 'Issue 审批必须通过 Team membership 校验 Mentor' unless issue_gate.include?('/teams/$MENTOR_TEAM/memberships/$user')
+          raise 'Issue 审批不得继续使用固定导师用户名' if issue_gate.include?('MENTOR_ONE') || issue_gate.include?('MENTOR_TWO')
+
+          puts "社区讨论、作业、Issue 与 PR 的 Team 驱动治理配置校验通过。"

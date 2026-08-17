@@ -19,10 +19,12 @@ jobs:
         uses: LingXi-Org/.github/.github/actions/pr-approval-gate@main
         with:
           github_token: ${{ github.token }}
+          team_token: ${{ secrets.ORG_GOVERNANCE_TOKEN }}
+          org_name: LingXi-Org
           owner_login: leecyang
-          mentor_one: ${{ vars.MENTOR_ONE }}
-          mentor_two: ${{ vars.MENTOR_TWO }}
+          mentor_team: mentors
           repository: ${{ github.repository }}
           pr_number: ${{ github.event.pull_request.number }}
           author: ${{ github.event.pull_request.user.login }}
           head_sha: ${{ github.event.pull_request.head.sha }}
+          event_action: ${{ github.event.action }}

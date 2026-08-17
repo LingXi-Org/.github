@@ -1,18 +1,22 @@
 name: LingXi PR 审批门禁
-description: 根据 PR 作者身份执行 LingXi 三人审批策略
+description: 根据 PR 作者是否属于 Mentors Team 动态执行审批策略
 inputs:
   github_token:
-    description: GitHub token
+    description: 当前仓库 GITHUB_TOKEN，用于读取 PR、评论和请求 Reviewer
+    required: true
+  team_token:
+    description: 只读组织治理 Token，用于读取 Team 成员
+    required: true
+  org_name:
+    description: GitHub Organization 名称
     required: true
   owner_login:
     description: 组织管理员 GitHub 用户名
     required: true
-  mentor_one:
-    description: 第一位导师 GitHub 用户名
-    required: false
-  mentor_two:
-    description: 第二位导师 GitHub 用户名
-    required: false
+  mentor_team:
+    description: Mentor Team slug
+    required: true
+    default: mentors
   repository:
     description: owner/repo
     required: true
@@ -25,20 +29,25 @@ inputs:
   head_sha:
     description: Pull Request current head SHA
     required: true
+  event_action:
+    description: GitHub event action
+    required: false
 runs:
   using: composite
   steps:
-    - name: 计算并校验审批人
+    - name: 计算并校验 Team 审批
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
+        TEAM_TOKEN: ${{ inputs.team_token }}
+        ORG_NAME: ${{ inputs.org_name }}
         OWNER_LOGIN: ${{ inputs.owner_login }}
-        MENTOR_ONE: ${{ inputs.mentor_one }}
-        MENTOR_TWO: ${{ inputs.mentor_two }}
+        MENTOR_TEAM: ${{ inputs.mentor_team }}
         REPOSITORY: ${{ inputs.repository }}
         PR_NUMBER: ${{ inputs.pr_number }}
         PR_AUTHOR: ${{ inputs.author }}
         HEAD_SHA: ${{ inputs.head_sha }}
+        EVENT_ACTION: ${{ inputs.event_action }}
       run: |
         set -euo pipefail
 
@@ -47,38 +56,64 @@ runs:
             echo "## PR 审批门禁"
             echo
             echo "- PR 作者：@$PR_AUTHOR"
-            echo "- 规则：管理员本人 PR 自动通过治理审批"
+            echo "- 规则：管理员本人 PR 无需人工审批"
             echo "- 结果：✅ 通过"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "管理员本人 PR，自动通过治理审批。"
           exit 0
         fi
 
-        if [ -z "${MENTOR_ONE:-}" ] || [ -z "${MENTOR_TWO:-}" ]; then
-          echo "::error::请先在组织 Actions Variables 中设置 MENTOR_ONE 和 MENTOR_TWO。"
-          exit 1
-        fi
-        if [ "$MENTOR_ONE" = "$MENTOR_TWO" ] || [ "$MENTOR_ONE" = "$OWNER_LOGIN" ] || [ "$MENTOR_TWO" = "$OWNER_LOGIN" ]; then
-          echo "::error::OWNER_LOGIN、MENTOR_ONE、MENTOR_TWO 必须是三个不同的 GitHub 用户。"
+        if [ -z "${TEAM_TOKEN:-}" ]; then
+          echo "::error::缺少 ORG_GOVERNANCE_TOKEN，无法读取 @$ORG_NAME/$MENTOR_TEAM 成员。"
           exit 1
         fi
 
-        if [ "$PR_AUTHOR" = "$MENTOR_ONE" ]; then
-          required=("$OWNER_LOGIN" "$MENTOR_TWO")
-          policy="导师 PR：管理员 + 另一位导师"
-        elif [ "$PR_AUTHOR" = "$MENTOR_TWO" ]; then
-          required=("$OWNER_LOGIN" "$MENTOR_ONE")
-          policy="导师 PR：管理员 + 另一位导师"
+        mentor_members="$(
+          GH_TOKEN="$TEAM_TOKEN" gh api --paginate \
+            "/orgs/$ORG_NAME/teams/$MENTOR_TEAM/members?per_page=100" \
+            --jq '.[].login'
+        )"
+
+        # Owner 永远拥有 Mentor 审批资格，即使暂时没有加入 Team。
+        mentor_members="$(printf '%s\n%s\n' "$OWNER_LOGIN" "$mentor_members" | sed '/^$/d' | sort -fu)"
+
+        is_mentor=false
+        if grep -Fxiq "$PR_AUTHOR" <<<"$mentor_members"; then
+          is_mentor=true
+        fi
+
+        comment_once() {
+          local marker='<!-- lingxi-governance:pr-review-request -->'
+          local body="$1"
+          local exists
+          exists="$(gh api --paginate "/repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -n1 || true)"
+          if [ -z "$exists" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body "$marker
+        $body" >/dev/null
+          fi
+        }
+
+        if [ "$is_mentor" = "true" ]; then
+          policy="Mentor PR：只需要管理员 @$OWNER_LOGIN 审批"
+          request_payload="$(printf '{\"reviewers\":[\"%s\"]}' "$OWNER_LOGIN")"
+          gh api --method POST "/repos/$REPOSITORY/pulls/$PR_NUMBER/requested_reviewers" \
+            --input - <<<"$request_payload" >/dev/null 2>&1 || \
+            echo "::warning::无法自动请求 @$OWNER_LOGIN Review；仍会按实际审批记录执行门禁。"
+
+          if [ "$EVENT_ACTION" = "opened" ] || [ "$EVENT_ACTION" = "reopened" ] || [ "$EVENT_ACTION" = "ready_for_review" ]; then
+            comment_once "@$OWNER_LOGIN 这是 @$PR_AUTHOR 提交的 Mentor PR，只需要你的 Approve。"
+          fi
         else
-          required=("$OWNER_LOGIN" "$MENTOR_ONE" "$MENTOR_TWO")
-          policy="其他成员 PR：管理员 + 两位导师"
-        fi
+          policy="Builder / 外部贡献者 PR：需要任意 2 名 Mentors 审批"
+          request_payload="$(printf '{\"team_reviewers\":[\"%s\"]}' "$MENTOR_TEAM")"
+          gh api --method POST "/repos/$REPOSITORY/pulls/$PR_NUMBER/requested_reviewers" \
+            --input - <<<"$request_payload" >/dev/null 2>&1 || \
+            echo "::warning::无法自动请求 @$ORG_NAME/$MENTOR_TEAM Team Review；仍会按实际审批记录执行门禁。"
 
-        # 尽量自动请求需要的 Reviewer；fork PR 权限不足时仅跳过，不影响门禁判断。
-        reviewers_json="$(printf '%s\n' "${required[@]}" | python3 -c 'import json,sys; print(json.dumps([x.strip() for x in sys.stdin if x.strip()]))')"
-        gh api --method POST "/repos/$REPOSITORY/pulls/$PR_NUMBER/requested_reviewers" \
-          --input - <<<"{\"reviewers\":$reviewers_json}" >/dev/null 2>&1 || \
-          echo "::warning::无法自动请求 Reviewer（常见于 fork PR）；仍会按审批记录执行门禁。"
+          if [ "$EVENT_ACTION" = "opened" ] || [ "$EVENT_ACTION" = "reopened" ] || [ "$EVENT_ACTION" = "ready_for_review" ]; then
+            comment_once "@$ORG_NAME/$MENTOR_TEAM 这是 @$PR_AUTHOR 提交的开发 PR，需要任意 **2 名 Mentors** Approve；@$OWNER_LOGIN 可以计入其中 1 人。"
+          fi
+        fi
 
         owner="${REPOSITORY%%/*}"
         repo="${REPOSITORY#*/}"
@@ -87,34 +122,52 @@ runs:
             -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviews(last:100){nodes{author{login} state submittedAt commit{oid}}}}}}' \
             -F owner="$owner" -F repo="$repo" -F number="$PR_NUMBER"
         )"
+
         export REVIEWS_JSON="$reviews"
-        export REQUIRED_REVIEWERS="$(IFS=,; echo "${required[*]}")"
+        export MENTOR_MEMBERS="$mentor_members"
+        export IS_MENTOR="$is_mentor"
+        export REQUIRED_OWNER="$OWNER_LOGIN"
+        export CURRENT_HEAD="$HEAD_SHA"
 
         result="$(python3 - <<'PY'
         import json, os
 
         data = json.loads(os.environ['REVIEWS_JSON'])
-        required = [x for x in os.environ['REQUIRED_REVIEWERS'].split(',') if x]
-        head = os.environ['HEAD_SHA']
+        mentors = {x.strip().lower(): x.strip() for x in os.environ['MENTOR_MEMBERS'].splitlines() if x.strip()}
+        owner = os.environ['REQUIRED_OWNER']
+        owner_key = owner.lower()
+        head = os.environ['CURRENT_HEAD']
+        author_is_mentor = os.environ['IS_MENTOR'] == 'true'
         nodes = (((data.get('data') or {}).get('repository') or {}).get('pullRequest') or {}).get('reviews', {}).get('nodes', []) or []
 
         latest = {}
         for review in nodes:
-            author = ((review.get('author') or {}).get('login') or '')
+            login = ((review.get('author') or {}).get('login') or '').strip()
             commit = ((review.get('commit') or {}).get('oid') or '')
-            if author not in required or commit != head:
+            key = login.lower()
+            if not login or key not in mentors or commit != head:
                 continue
             submitted = review.get('submittedAt') or ''
-            if author not in latest or submitted >= latest[author][0]:
-                latest[author] = (submitted, review.get('state') or '')
+            if key not in latest or submitted >= latest[key][0]:
+                latest[key] = (submitted, review.get('state') or '', login)
 
-        approved = [u for u in required if latest.get(u, ('', ''))[1] == 'APPROVED']
-        pending = [u for u in required if u not in approved]
-        print('APPROVED=' + ','.join(approved))
-        print('PENDING=' + ','.join(pending))
+        approved = [v[2] for k, v in latest.items() if v[1] == 'APPROVED']
+
+        if author_is_mentor:
+            owner_ok = latest.get(owner_key, ('', '', ''))[1] == 'APPROVED'
+            print('PASS=true' if owner_ok else 'PASS=false')
+            print('APPROVED=' + ','.join(approved))
+            print('PENDING=' + ('' if owner_ok else owner))
+        else:
+            unique = sorted(set(approved), key=str.lower)
+            ok = len(unique) >= 2
+            print('PASS=true' if ok else 'PASS=false')
+            print('APPROVED=' + ','.join(unique))
+            print('PENDING=' + ('' if ok else f'还需要 {2-len(unique)} 名 Mentor'))
         PY
         )"
 
+        passed="$(grep '^PASS=' <<<"$result" | cut -d= -f2-)"
         approved="$(grep '^APPROVED=' <<<"$result" | cut -d= -f2-)"
         pending="$(grep '^PENDING=' <<<"$result" | cut -d= -f2-)"
 
@@ -124,13 +177,13 @@ runs:
           echo "- PR 作者：@$PR_AUTHOR"
           echo "- 规则：$policy"
           echo "- 当前提交：\`$HEAD_SHA\`"
-          echo "- 已通过：${approved:-无}"
+          echo "- 已通过 Mentors：${approved:-无}"
           echo "- 待审批：${pending:-无}"
         } >> "$GITHUB_STEP_SUMMARY"
 
-        if [ -n "$pending" ]; then
-          echo "::error::仍需审批：$pending"
+        if [ "$passed" != "true" ]; then
+          echo "::error::$pending"
           exit 1
         fi
 
-        echo "所有必需审批均已完成。"
+        echo "治理审批条件已满足。"

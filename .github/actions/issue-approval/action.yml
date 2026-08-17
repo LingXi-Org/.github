@@ -1,14 +1,17 @@
 name: LingXi Issue 审批
-description: 开发 Issue 由管理员或两位导师中的任意一人批准
+description: 开发 Issue 由任意一名 Mentor 批准
 inputs:
   github_token:
     required: true
+  team_token:
+    required: true
+  org_name:
+    required: true
   owner_login:
     required: true
-  mentor_one:
-    required: false
-  mentor_two:
-    required: false
+  mentor_team:
+    required: true
+    default: mentors
   repository:
     required: true
   event_name:
@@ -30,9 +33,10 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
+        TEAM_TOKEN: ${{ inputs.team_token }}
+        ORG_NAME: ${{ inputs.org_name }}
         OWNER_LOGIN: ${{ inputs.owner_login }}
-        MENTOR_ONE: ${{ inputs.mentor_one }}
-        MENTOR_TWO: ${{ inputs.mentor_two }}
+        MENTOR_TEAM: ${{ inputs.mentor_team }}
         REPOSITORY: ${{ inputs.repository }}
         EVENT_NAME: ${{ inputs.event_name }}
         ISSUE_NUMBER: ${{ inputs.issue_number }}
@@ -55,11 +59,19 @@ runs:
         comment() {
           gh issue comment "$ISSUE_NUMBER" --repo "$REPOSITORY" --body "$1" >/dev/null
         }
-        reviewers="@$OWNER_LOGIN"
-        [ -n "${MENTOR_ONE:-}" ] && reviewers="$reviewers @$MENTOR_ONE"
-        [ -n "${MENTOR_TWO:-}" ] && reviewers="$reviewers @$MENTOR_TWO"
+        is_mentor() {
+          local user="$1"
+          if [ "$user" = "$OWNER_LOGIN" ]; then
+            return 0
+          fi
+          if [ -z "${TEAM_TOKEN:-}" ]; then
+            return 1
+          fi
+          GH_TOKEN="$TEAM_TOKEN" gh api "/orgs/$ORG_NAME/teams/$MENTOR_TEAM/memberships/$user" \
+            --jq 'select(.state == "active") | .state' >/dev/null 2>&1
+        }
 
-        ensure_label "issue:review" "FBCA04" "等待治理者批准"
+        ensure_label "issue:review" "FBCA04" "等待 Mentor 批准"
         ensure_label "issue:approved" "0E8A16" "开发 Issue 已批准"
         ensure_label "issue:declined" "B60205" "开发 Issue 当前未批准"
 
@@ -72,7 +84,7 @@ runs:
             comment "✅ 该 Issue 来自已审批的组织需求讨论，批准者：@${approver:-unknown}。无需再次审批，可以进入开发。"
           else
             add_label "issue:review"
-            comment "$reviewers 新开发 Issue 等待审批。三人任意一人回复 \`/approve-issue\` 即可进入开发；回复 \`/decline-issue\` 可标记为暂不开发。"
+            comment "@$ORG_NAME/$MENTOR_TEAM 新开发 Issue 等待审批。任意一名 Mentor 回复 \`/approve-issue\` 即可进入开发；回复 \`/decline-issue\` 可标记为暂不开发。"
           fi
           exit 0
         fi
@@ -83,12 +95,8 @@ runs:
           *) exit 0 ;;
         esac
 
-        authorized=false
-        for user in "$OWNER_LOGIN" "${MENTOR_ONE:-}" "${MENTOR_TWO:-}"; do
-          if [ -n "$user" ] && [ "$ACTOR" = "$user" ]; then authorized=true; fi
-        done
-        if [ "$authorized" != "true" ]; then
-          echo "@$ACTOR 不在 Issue 审批人名单中，忽略命令。"
+        if ! is_mentor "$ACTOR"; then
+          comment "@$ACTOR 该命令仅限 @$ORG_NAME/$MENTOR_TEAM 成员使用。"
           exit 0
         fi
 
@@ -96,10 +104,10 @@ runs:
           add_label "issue:approved"
           remove_label "issue:review"
           remove_label "issue:declined"
-          comment "✅ 该开发 Issue 已由 @$ACTOR 批准，可以进入开发。"
+          comment "✅ 该开发 Issue 已由 Mentor @$ACTOR 批准，可以进入开发。"
         else
           add_label "issue:declined"
           remove_label "issue:review"
           remove_label "issue:approved"
-          comment "该 Issue 已由 @$ACTOR 标记为暂不进入开发；如有新信息可以继续讨论后重新审批。"
+          comment "该 Issue 已由 Mentor @$ACTOR 标记为暂不进入开发；如有新信息可以继续讨论后重新审批。"
         fi
