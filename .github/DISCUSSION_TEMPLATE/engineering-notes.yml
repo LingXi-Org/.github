@@ -1,4 +1,4 @@
-title: "[Engineering Note] "
+title: "[技术札记] "
 body:
   - type: markdown
     attributes:
@@ -7,35 +7,35 @@ body:
   - type: dropdown
     id: topic
     attributes:
-      label: 主题 / Topic
+      label: 主题
       options:
-        - Architecture
-        - Agent Runtime
-        - Skills
-        - Frontend
-        - Research
-        - Infrastructure
-        - Other
+        - 架构设计
+        - 智能体运行时
+        - 技能体系
+        - 前端工程
+        - 研究与实验
+        - 基础设施
+        - 其他
     validations:
       required: true
   - type: textarea
     id: summary
     attributes:
-      label: 摘要 / Summary
-      description: 用 2-4 句话说明本文讨论的问题和主要结论。
+      label: 摘要
+      description: 用 2–4 句话说明本文讨论的问题和主要结论。
     validations:
       required: true
   - type: textarea
     id: article
     attributes:
-      label: 正文 / Article
+      label: 正文
       description: 说明背景、方法、关键设计、结果和适用边界。
     validations:
       required: true
   - type: textarea
     id: references
     attributes:
-      label: 参考资料 / References
-      description: 相关代码、文档、论文、Issue、PR 或外部资料。
+      label: 参考资料
+      description: 提供相关代码、文档、论文、议题、拉取请求或外部资料。
     validations:
       required: false
