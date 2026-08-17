@@ -111,8 +111,8 @@ Organization Discussions 是 LingXi 的跨仓库社区入口。具体实现任�
 
 `.github/workflows/community-publisher.yml` 提供三种手动动作：
 
-- `bootstrap`：发布组织技术栈总览、各仓库最新 Release、当前可见 GHCR Package，以及最近 30 天开发快照。
-- `sync`：同步最近 48 小时的新仓库、Release 和 GHCR Package。
+- `bootstrap`：发布组织技术栈总览、各仓库最新 Release、可读取的最新 GHCR Package，以及最近 30 天开发快照。
+- `sync`：同步最近 48 小时的新仓库、Release 和可读取的 GHCR Package。
 - `digest`：发布最近 7 天已合并 PR 的开发摘要。
 
 定时任务：
@@ -128,6 +128,18 @@ DISCUSSIONS_AUTOMATION_ENABLED=true
 
 手动 `workflow_dispatch` 不受该变量限制，可用于首次验证。
 
+### GitHub Packages access
+
+`.github` 仓库的默认 `GITHUB_TOKEN` 可以发布 Discussion，但在组织级 Packages API 上可能返回 `403 Resource not accessible by integration`。这不应阻塞 Release、仓库和开发摘要公告。
+
+因此 Package 同步采用以下策略：
+
+1. 若配置了 Actions secret `ORG_PACKAGE_TOKEN`，优先使用该凭据读取组织级 GHCR Package。
+2. 未配置时尝试默认 `GITHUB_TOKEN`。
+3. API 无权限或返回异常结构时，只跳过 Package 公告并输出 warning，其他公告继续成功发布。
+
+`ORG_PACKAGE_TOKEN` 只用于读取组织 Package，不得复用 `ORG_INVITE_TOKEN`。
+
 ## Bootstrap order
 
 首次启用时按以下顺序操作：
@@ -137,7 +149,7 @@ DISCUSSIONS_AUTOMATION_ENABLED=true
 3. 按本文创建 Section 和 Categories，并确认 slug。
 4. 合并包含 Discussion Forms 和 workflows 的变更到 `.github` 默认分支。
 5. 在 Actions → `Community Publisher` 手动运行 `bootstrap`。
-6. 检查自动生成的组织总览、Release、Package 和 Development Snapshot。
+6. 检查自动生成的组织总览、Release 和 Development Snapshot；若配置了 `ORG_PACKAGE_TOKEN`，同时检查 Package 公告。
 7. 将 `Welcome to LingXi — Architecture, Projects & Current Status` 置顶。
 8. 设置 Actions variable `DISCUSSIONS_AUTOMATION_ENABLED=true`，开启定时同步。
 9. 创建一个测试 `Ideas and Requests`，验证 `@leecyang`、`/approve` 和 Issue 跳转。
@@ -152,6 +164,8 @@ Discussion → Issue 流程不会使用跨仓库写入 Token。机器人只生�
 - `discussions: write`
 - `issues: write`（用于维护 source repository 的共享 labels）
 - `contents: read`
-- `packages: read`（用于读取可见 GitHub Packages）
+- `packages: read`
+
+若需要组织级 GHCR Package 公告，再单独配置 `ORG_PACKAGE_TOKEN`，且只授予读取组织 Package 所需的最小权限。
 
 不得把 `ORG_INVITE_TOKEN` 用于 Discussion 自动化。组织邀请凭据与社区内容自动化必须保持权限隔离。
