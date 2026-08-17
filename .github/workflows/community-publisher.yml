@@ -1,10 +1,10 @@
-name: Community Publisher
+name: 社区内容发布
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: What should be published
+        description: 选择要执行的发布动作
         required: true
         default: bootstrap
         type: choice
@@ -28,11 +28,11 @@ env:
 
 jobs:
   bootstrap:
-    name: Publish organization overview
+    name: 发布组织总览
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap'
     runs-on: ubuntu-latest
     steps:
-      - name: Publish overview
+      - name: 发布组织技术与社区总览
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -48,74 +48,74 @@ jobs:
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
 
           if [ -z "$repo_id" ] || [ -z "$category_id" ]; then
-            echo "::error::Enable Organization Discussions with LingXi-Org/.github as source and create the Announcements category first."
+            echo "::error::请先启用组织 Discussions，将 LingXi-Org/.github 设为来源仓库，并创建公告分类。"
             exit 1
           fi
 
           marker="<!-- lingxi-auto:organization-overview:v1 -->"
           if jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context" | grep -Fq "$marker"; then
-            echo "Organization overview already exists."
+            echo "组织总览已存在，无需重复发布。"
             exit 0
           fi
 
           repos="$(
             gh api "/orgs/$ORG_NAME/repos?type=public&per_page=100" \
-              --jq '.[] | [.name, (.description // ""), .html_url] | @tsv'
+              --jq '.[] | [.name, .html_url] | @tsv'
           )"
 
           cat > /tmp/body.md <<EOF
           $marker
           # LingXi
 
-          **Everything is a Skill. State decides next.**
+          **一切皆技能，状态决定下一步。**
 
-          LingXi 是围绕 AI 学习产品、持久化 Agent Runtime、开放 Skills 与统一身份能力持续演进的开源工程体系。
+          LingXi 是围绕 AI 学习产品、持久化智能体运行时、开放技能体系与统一身份能力持续演进的开源工程体系。
 
-          ## Core stack
+          ## 核心技术栈
 
-          | Project | Role |
+          | 项目 | 定位 |
           | --- | --- |
           | [LingxiLearn](https://github.com/$ORG_NAME/LingxiLearn) | 面向个人学习任务的多智能体 AI 学习工作台 |
-          | [LingxiGraph](https://github.com/$ORG_NAME/LingxiGraph) | 可恢复、可持久化、可审计的 Agent 图运行时 |
-          | [LingxiSkills](https://github.com/$ORG_NAME/LingxiSkills) | 可复用 Agent Skills 与人类可读技能文档 |
+          | [LingxiGraph](https://github.com/$ORG_NAME/LingxiGraph) | 可恢复、可持久化、可审计的智能体图运行时 |
+          | [LingxiSkills](https://github.com/$ORG_NAME/LingxiSkills) | 可复用智能体技能与人类可读技能文档 |
           | [LingxiIdentity](https://github.com/$ORG_NAME/LingxiIdentity) | LingXi 的统一身份与 OIDC 边界 |
           | [LingxiNext](https://github.com/$ORG_NAME/LingxiNext) | 基于 LingxiGraph 的多智能体编排与运行体验 |
 
-          ## Repository map
+          ## 公开仓库
 
           EOF
 
-          while IFS=$'\t' read -r name description url; do
+          while IFS=$'\t' read -r name url; do
             [ "$name" = ".github" ] && continue
-            printf -- "- **[%s](%s)** — %s\n" "$name" "$url" "${description:-No description}" >> /tmp/body.md
+            printf -- "- **[%s](%s)**\n" "$name" "$url" >> /tmp/body.md
           done <<<"$repos"
 
           cat >> /tmp/body.md <<'EOF'
 
-          ## Community
+          ## 社区入口
 
-          - **Ideas and Requests**：提出需求，在维护者审批后进入对应仓库 Issue。
-          - **Build Lab / Weekly Missions**：参与周期性工程与研究任务。
-          - **Build Lab / Submissions**：提交独立成果、PR、Demo 与验证结果。
-          - **Engineering Notes**：沉淀架构、工程、研究与实验文章。
+          - **想法与需求**：提出需求，在维护者审批后进入对应仓库议题。
+          - **共建实验室 / 每周任务**：参与周期性工程与研究任务。
+          - **共建实验室 / 任务提交**：提交独立成果、拉取请求、演示与验证结果。
+          - **技术札记**：沉淀架构、工程、研究与实验文章。
 
-          Release、新仓库和每周开发摘要由社区自动化持续同步到本分类。配置可选的 `ORG_PACKAGE_TOKEN` 后，也会同步组织级 GHCR Package。
+          版本发布、新仓库和每周开发摘要可由社区自动化持续同步到公告分类。配置可选的 `ORG_PACKAGE_TOKEN` 后，也可以同步组织级 GHCR 软件包。
           EOF
 
-          title="Welcome to LingXi — Architecture, Projects & Current Status"
+          title="欢迎来到 LingXi — 架构、项目与当前状态"
           body="$(cat /tmp/body.md)"
           gh api graphql \
             -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
             -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"
 
   sync:
-    name: Sync releases packages and repositories
+    name: 同步版本、软件包与新仓库
     if: >-
       (github.event_name == 'workflow_dispatch' && (inputs.action == 'bootstrap' || inputs.action == 'sync')) ||
       (github.event_name == 'schedule' && github.event.schedule == '17 */6 * * *' && vars.DISCUSSIONS_AUTOMATION_ENABLED == 'true')
     runs-on: ubuntu-latest
     steps:
-      - name: Publish new development events
+      - name: 发布新的开发事件
         env:
           GH_TOKEN: ${{ github.token }}
           ORG_PACKAGE_TOKEN: ${{ secrets.ORG_PACKAGE_TOKEN }}
@@ -131,7 +131,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::Missing Announcements category."; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类。"; exit 1; }
 
           discussions="$(jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context")"
 
@@ -140,7 +140,7 @@ jobs:
             local title="$2"
             local file="$3"
             if grep -Fq "$marker" <<<"$discussions"; then
-              echo "Already published: $marker"
+              echo "已发布，跳过：$marker"
               return 0
             fi
 
@@ -150,7 +150,7 @@ jobs:
               -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
               -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body" >/dev/null
             discussions+=$'\n'"$body"
-            echo "Published: $title"
+            echo "已发布：$title"
           }
 
           json_array_or_empty() {
@@ -176,20 +176,19 @@ jobs:
 
               name="$(jq -r '.name' <<<"$repo")"
               url="$(jq -r '.html_url' <<<"$repo")"
-              description="$(jq -r '.description // "No description"' <<<"$repo")"
               marker="<!-- lingxi-auto:new-repo:$name -->"
 
               cat > /tmp/item.md <<EOF
           $marker
-          # New repository: $name
+          # 新仓库：$name
 
-          $description
+          LingXi 组织新增公开仓库 **$name**。
 
-          **Repository:** $url
+          **仓库地址：** $url
 
-          这是 LingXi 组织自动发布的新仓库通知。后续重要版本与开发进展会继续同步到 Announcements。
+          后续重要版本与开发进展可继续在公告分类中发布。
           EOF
-              publish_once "$marker" "[New Repository] $name" /tmp/item.md
+              publish_once "$marker" "[新仓库] $name" /tmp/item.md
             done < <(jq -c '.[] | select(.name != ".github")' <<<"$repos_json")
           fi
 
@@ -212,24 +211,21 @@ jobs:
 
               repo="${full_name#*/}"
               tag="$(jq -r '.tag_name' <<<"$release")"
-              name="$(jq -r '.name // empty' <<<"$release")"
               url="$(jq -r '.html_url' <<<"$release")"
-              prerelease="$(jq -r '.prerelease' <<<"$release")"
+              prerelease="$(jq -r 'if .prerelease then "是" else "否" end' <<<"$release")"
               marker="<!-- lingxi-auto:release:$repo:$tag -->"
 
               cat > /tmp/item.md <<EOF
           $marker
           # $repo $tag
 
-          ${name:-Release $tag}
+          - **仓库：** https://github.com/$full_name
+          - **版本页面：** $url
+          - **是否为预发布版本：** $prerelease
 
-          - **Repository:** https://github.com/$full_name
-          - **Release:** $url
-          - **Prerelease:** $prerelease
-
-          完整变更、安装与迁移信息以 Release 页面为准。
+          完整变更、安装与迁移信息以版本页面为准。
           EOF
-              publish_once "$marker" "[Release] $repo $tag" /tmp/item.md
+              publish_once "$marker" "[版本发布] $repo $tag" /tmp/item.md
             done < <(jq -c '.[] | select(.draft == false)' <<<"$releases")
           done < <(jq -r '.[].full_name' <<<"$repos_json")
 
@@ -239,11 +235,11 @@ jobs:
 
           if packages="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages?package_type=container&per_page=100" 2>"$package_error")"; then
             if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$packages"; then
-              echo "::warning::GitHub Packages API returned an unexpected response; package announcements were skipped."
+              echo "::warning::GitHub Packages 接口返回了非预期数据，本次跳过软件包公告。"
               packages='[]'
             fi
           else
-            echo "::warning::GitHub Packages sync is unavailable with the current token; Release, repository and digest publishing remain active. Configure ORG_PACKAGE_TOKEN with read access to organization packages to enable package announcements."
+            echo "::warning::当前凭据无法读取组织级 GitHub Packages。本次仍会正常处理版本、新仓库和开发摘要；如需启用软件包公告，请配置具有组织软件包读取权限的 ORG_PACKAGE_TOKEN。"
             packages='[]'
           fi
 
@@ -257,7 +253,7 @@ jobs:
             if versions="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages/container/$encoded/versions?per_page=5" 2>"$versions_error")"; then
               versions="$(json_array_or_empty "$versions")"
             else
-              echo "::warning::Unable to read versions for package $package_name; skipping it."
+              echo "::warning::无法读取软件包 $package_name 的版本信息，本次跳过。"
               continue
             fi
 
@@ -280,26 +276,26 @@ jobs:
 
               cat > /tmp/item.md <<EOF
           $marker
-          # Package update: $package_name
+          # 软件包更新：$package_name
 
-          - **Package:** $package_url
-          - **Tags:** ${tags:-untagged}
-          - **Published:** $created
+          - **软件包：** $package_url
+          - **标签：** ${tags:-无标签}
+          - **发布时间：** $created
 
           该通知由 LingXi 社区发布器从 GitHub Packages 自动同步。
           EOF
-              publish_once "$marker" "[Package] $package_name ${tags:+— $tags}" /tmp/item.md
+              publish_once "$marker" "[软件包] $package_name ${tags:+— $tags}" /tmp/item.md
             done < <(jq -c '.[]' <<<"$versions")
           done < <(jq -c '.[]' <<<"$packages")
 
   digest:
-    name: Publish weekly development digest
+    name: 发布每周开发摘要
     if: >-
       (github.event_name == 'workflow_dispatch' && (inputs.action == 'bootstrap' || inputs.action == 'digest')) ||
       (github.event_name == 'schedule' && github.event.schedule == '0 12 * * 0' && vars.DISCUSSIONS_AUTOMATION_ENABLED == 'true')
     runs-on: ubuntu-latest
     steps:
-      - name: Publish digest
+      - name: 汇总并发布开发进展
         env:
           GH_TOKEN: ${{ github.token }}
           BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap' }}
@@ -314,23 +310,23 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::Missing Announcements category."; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类。"; exit 1; }
 
           if [ "$BOOTSTRAP" = "true" ]; then
             since="$(date -u -d '30 days ago' +%F)"
-            period="Current Development Snapshot"
+            period="当前开发快照"
             marker="<!-- lingxi-auto:development-snapshot:v1 -->"
-            title="[Progress] Current Development Snapshot"
+            title="[开发进展] 当前开发快照"
           else
             since="$(date -u -d '7 days ago' +%F)"
             week="$(date -u +%G-W%V)"
             period="$week"
             marker="<!-- lingxi-auto:weekly-digest:$week -->"
-            title="[Progress] $week — LingXi Weekly Development Digest"
+            title="[开发进展] $week — LingXi 每周开发摘要"
           fi
 
           if jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context" | grep -Fq "$marker"; then
-            echo "Digest already exists."
+            echo "本周期开发摘要已存在，无需重复发布。"
             exit 0
           fi
 
@@ -341,25 +337,23 @@ jobs:
           $marker
           # $period
 
-          本摘要自动聚合 LingXi 组织最近的合并开发活动，便于社区快速了解当前工程方向。
+          本摘要聚合 LingXi 组织最近的已合并开发活动，便于社区快速了解当前工程进展。
 
-          ## Merged pull requests
+          ## 已合并的拉取请求
 
           EOF
 
           count="$(jq 'length' <<<"$prs")"
           if [ "$count" -eq 0 ]; then
-            echo "- 本周期暂无已合并 Pull Request。" >> /tmp/body.md
+            echo "- 本周期暂无已合并的拉取请求。" >> /tmp/body.md
           else
-            jq -r '.[] | "- [" + .repository_url + "/pull/" + ((.pull_request.url | split("/") | last)) + "](" + .html_url + ") — " + .title + " by @" + .user.login' <<<"$prs" \
-              | sed -E 's#\[https://api.github.com/repos/([^/]+/[^/]+)/pull/([0-9]+)\]#\[\1#\2\]#' \
-              >> /tmp/body.md
+            jq -r '.[] | "- [" + (.repository_url | sub("https://api.github.com/repos/"; "")) + "#" + ((.pull_request.url | split("/") | last)) + "](" + .html_url + ") — @" + .user.login' <<<"$prs" >> /tmp/body.md
           fi
 
           cat >> /tmp/body.md <<EOF
 
           ---
-          Generated from merged Pull Requests since **$since**.
+          统计范围：自 **$since** 起已合并的拉取请求。
           EOF
 
           body="$(cat /tmp/body.md)"
