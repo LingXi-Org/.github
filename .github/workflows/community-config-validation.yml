@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   validate:
-    name: 校验 Discussion 表单与工作流
+    name: 校验讨论表单与工作流
     runs-on: ubuntu-latest
     steps:
       - name: 检出源码
@@ -32,19 +32,19 @@ jobs:
           require 'yaml'
 
           forms = {
-            'announcements' => '.github/DISCUSSION_TEMPLATE/announcements.yml',
-            'ideas-and-requests' => '.github/DISCUSSION_TEMPLATE/ideas-and-requests.yml',
-            'weekly-missions' => '.github/DISCUSSION_TEMPLATE/weekly-missions.yml',
-            'submissions' => '.github/DISCUSSION_TEMPLATE/submissions.yml',
-            'engineering-notes' => '.github/DISCUSSION_TEMPLATE/engineering-notes.yml'
+            '公告' => '.github/DISCUSSION_TEMPLATE/公告.yml',
+            '想法与需求' => '.github/DISCUSSION_TEMPLATE/想法与需求.yml',
+            '每周任务' => '.github/DISCUSSION_TEMPLATE/每周任务.yml',
+            '任务提交' => '.github/DISCUSSION_TEMPLATE/任务提交.yml',
+            '技术札记' => '.github/DISCUSSION_TEMPLATE/技术札记.yml'
           }
 
           expected_titles = {
-            'announcements' => '[公告] ',
-            'ideas-and-requests' => '[需求] ',
-            'weekly-missions' => '[每周任务] ',
-            'submissions' => '[任务提交] ',
-            'engineering-notes' => '[技术札记] '
+            '公告' => '[公告] ',
+            '想法与需求' => '[需求] ',
+            '每周任务' => '[每周任务] ',
+            '任务提交' => '[任务提交] ',
+            '技术札记' => '[技术札记] '
           }
 
           forms.each do |slug, path|
@@ -61,6 +61,18 @@ jobs:
             raise "#{path}：字段名称不得继续使用中英双语斜杠格式" if labels.any? { |label| label.include?(' / ') }
           end
 
+          old_forms = %w[
+            announcements.yml
+            ideas-and-requests.yml
+            weekly-missions.yml
+            submissions.yml
+            engineering-notes.yml
+          ]
+          old_forms.each do |name|
+            path = File.join('.github/DISCUSSION_TEMPLATE', name)
+            raise "旧英文分类表单仍然存在：#{path}" if File.exist?(path)
+          end
+
           workflow_paths = %w[
             .github/workflows/discussion-governance.yml
             .github/workflows/community-publisher.yml
@@ -74,12 +86,11 @@ jobs:
           governance = File.read('.github/workflows/discussion-governance.yml')
           publisher = File.read('.github/workflows/community-publisher.yml')
 
-          forms.keys.each do |slug|
-            next if slug == 'announcements' && publisher.include?(slug)
-            raise "治理工作流未引用分类 slug：#{slug}" unless governance.include?(slug)
+          %w[想法与需求 每周任务 任务提交 技术札记].each do |slug|
+            raise "治理工作流未引用中文分类 slug：#{slug}" unless governance.include?(slug)
           end
 
-          raise '发布工作流必须指向 announcements 分类' unless publisher.include?('ANNOUNCEMENTS_SLUG: announcements')
+          raise '发布工作流必须指向中文“公告”分类' unless publisher.include?('ANNOUNCEMENTS_SLUG: 公告')
           raise '定时发布必须继续受 DISCUSSIONS_AUTOMATION_ENABLED 控制' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
           raise '需求审批命令必须继续保留 /approve' unless governance.include?('/approve')
           raise '任务验收命令必须继续保留 /accept' unless governance.include?('/accept')
@@ -87,4 +98,10 @@ jobs:
           raise '中文组织总览必须使用独立迁移标识' unless publisher.include?('organization-overview:zh-v1')
           raise '中文开发快照必须使用独立迁移标识' unless publisher.include?('development-snapshot:zh-v1')
 
-          puts "已校验 #{forms.length} 个 Discussion 表单和 #{workflow_paths.length} 个社区工作流。"
+          legacy_slugs = %w[announcements ideas-and-requests weekly-missions submissions engineering-notes]
+          legacy_slugs.each do |slug|
+            raise "治理工作流仍引用旧英文 slug：#{slug}" if governance.include?(slug)
+            raise "发布工作流仍引用旧英文 slug：#{slug}" if publisher.include?(slug)
+          end
+
+          puts "已校验 #{forms.length} 个中文讨论表单和 #{workflow_paths.length} 个社区工作流。"

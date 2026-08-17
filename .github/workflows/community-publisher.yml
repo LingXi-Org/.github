@@ -24,7 +24,7 @@ permissions:
 env:
   ORG_NAME: LingXi-Org
   SOURCE_REPO: .github
-  ANNOUNCEMENTS_SLUG: announcements
+  ANNOUNCEMENTS_SLUG: 公告
 
 jobs:
   bootstrap:
@@ -48,7 +48,7 @@ jobs:
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
 
           if [ -z "$repo_id" ] || [ -z "$category_id" ]; then
-            echo "::error::请先启用组织 Discussions，将 LingXi-Org/.github 设为来源仓库，并创建公告分类。"
+            echo "::error::未找到中文分类“公告”。请确认组织讨论区来源仓库为 LingXi-Org/.github。"
             exit 1
           fi
 
@@ -131,7 +131,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类。"; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到中文分类“公告”。"; exit 1; }
 
           discussions="$(jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context")"
 
@@ -236,11 +236,11 @@ jobs:
 
           if packages="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages?package_type=container&per_page=100" 2>"$package_error")"; then
             if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$packages"; then
-              echo "::warning::GitHub Packages 接口返回了非预期数据，本次跳过软件包公告。"
+              echo "::warning::软件包接口返回了非预期数据，本次跳过软件包公告。"
               packages='[]'
             fi
           else
-            echo "::warning::当前凭据无法读取组织级 GitHub Packages。本次仍会正常处理版本、新仓库和开发摘要；如需启用软件包公告，请配置具有组织软件包读取权限的 ORG_PACKAGE_TOKEN。"
+            echo "::warning::当前凭据无法读取组织级软件包。本次仍会正常处理版本、新仓库和开发摘要；如需启用软件包公告，请配置 ORG_PACKAGE_TOKEN。"
             packages='[]'
           fi
 
@@ -249,9 +249,7 @@ jobs:
             package_name="$(jq -r '.name' <<<"$package")"
             encoded="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$package_name")"
 
-            versions_error="/tmp/package-versions-error.txt"
-            : > "$versions_error"
-            if versions="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages/container/$encoded/versions?per_page=5" 2>"$versions_error")"; then
+            if versions="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages/container/$encoded/versions?per_page=5" 2>/dev/null)"; then
               versions="$(json_array_or_empty "$versions")"
             else
               echo "::warning::无法读取软件包 $package_name 的版本信息，本次跳过。"
@@ -283,7 +281,7 @@ jobs:
           - **标签：** ${tags:-无标签}
           - **发布时间：** $created
 
-          该通知由 LingXi 社区发布器从 GitHub Packages 自动同步。
+          该通知由 LingXi 社区发布器自动同步。
           EOF
               publish_once "$marker" "[软件包] $package_name ${tags:+— $tags}" /tmp/item.md
             done < <(jq -c '.[]' <<<"$versions")
@@ -311,7 +309,7 @@ jobs:
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
-          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类。"; exit 1; }
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到中文分类“公告”。"; exit 1; }
 
           if [ "$BOOTSTRAP" = "true" ]; then
             since="$(date -u -d '30 days ago' +%F)"
