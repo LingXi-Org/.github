@@ -49,6 +49,9 @@ jobs:
           contributor_sample="$(jq -r --argjson mentors "$mentors" '
             [ .[] | select(.login != "leecyang") | select(.login as $u | ($mentors | any(.login == $u) | not)) ][0].login // ""
           ' <<<"$builders")"
+          if [ -z "$contributor_sample" ]; then
+            contributor_sample="__lingxi_non_mentor_check__"
+          fi
 
           echo "mentor_sample=$mentor_sample" >> "$GITHUB_OUTPUT"
           echo "contributor_sample=$contributor_sample" >> "$GITHUB_OUTPUT"
@@ -92,8 +95,7 @@ jobs:
           check_only: "true"
           expected_role: mentor
 
-      - name: Builder PR
-        if: steps.teams.outputs.contributor_sample != ''
+      - name: Builder / 外部 PR
         uses: ./.github/actions/pr-approval-gate
         with:
           github_token: ${{ github.token }}
@@ -111,20 +113,15 @@ jobs:
       - name: 场景覆盖
         env:
           MENTOR_SAMPLE: ${{ steps.teams.outputs.mentor_sample }}
-          CONTRIBUTOR_SAMPLE: ${{ steps.teams.outputs.contributor_sample }}
         run: |
           {
-            echo "## 当前可验证场景"
+            echo "## 场景覆盖"
             echo
             echo "- Owner PR：已验证"
             if [ -n "$MENTOR_SAMPLE" ]; then
               echo "- Mentor PR：已验证"
             else
-              echo "- Mentor PR：当前没有其他 Mentor，新增导师后会自动覆盖"
+              echo "- Mentor PR：新增其他 Mentor 后自动覆盖"
             fi
-            if [ -n "$CONTRIBUTOR_SAMPLE" ]; then
-              echo "- Builder PR：已验证"
-            else
-              echo "- Builder PR：当前没有仅属于 Builders 的成员，新增成员后会自动覆盖"
-            fi
+            echo "- Builder / 外部 PR：已验证"
           } >> "$GITHUB_STEP_SUMMARY"
