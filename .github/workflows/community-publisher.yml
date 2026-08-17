@@ -32,7 +32,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap'
     runs-on: ubuntu-latest
     steps:
-      - name: 发布或更新组织技术与社区总览
+      - name: 发布中文组织技术与社区总览
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -41,7 +41,7 @@ jobs:
 
           context="$(
             gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{id body}}}}' \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
               -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
@@ -52,8 +52,11 @@ jobs:
             exit 1
           fi
 
-          marker="<!-- lingxi-auto:organization-overview:v1 -->"
-          existing_id="$(jq -r --arg marker "$marker" '.data.repository.discussions.nodes[]? | select(.body | contains($marker)) | .id' <<<"$context" | head -n1)"
+          marker="<!-- lingxi-auto:organization-overview:zh-v1 -->"
+          if jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context" | grep -Fq "$marker"; then
+            echo "中文组织总览已存在，无需重复发布。"
+            exit 0
+          fi
 
           repos="$(
             gh api "/orgs/$ORG_NAME/repos?type=public&per_page=100" \
@@ -96,22 +99,14 @@ jobs:
           - **共建实验室 / 任务提交**：提交独立成果、拉取请求、演示与验证结果。
           - **技术札记**：沉淀架构、工程、研究与实验文章。
 
-          版本发布、新仓库和每周开发摘要可由社区自动化持续同步到公告分类。配置可选的 `ORG_PACKAGE_TOKEN` 后，也可以同步组织级 GHCR 软件包。
+          版本发布、新仓库和每周开发摘要可以由社区自动化同步到公告分类。配置可选的 `ORG_PACKAGE_TOKEN` 后，也可以同步组织级 GHCR 软件包。
           EOF
 
           title="欢迎来到 LingXi — 架构、项目与当前状态"
           body="$(cat /tmp/body.md)"
-
-          if [ -n "$existing_id" ]; then
-            gh api graphql \
-              -f query='mutation($discussion:ID!,$title:String!,$body:String!){updateDiscussion(input:{discussionId:$discussion,title:$title,body:$body}){discussion{url}}}' \
-              -F discussion="$existing_id" -f title="$title" -f body="$body"
-            echo "已更新现有组织总览。"
-          else
-            gh api graphql \
-              -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
-              -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"
-          fi
+          gh api graphql \
+            -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
+            -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"
 
   sync:
     name: 同步版本、软件包与新仓库
@@ -131,40 +126,31 @@ jobs:
 
           context="$(
             gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{id body}}}}' \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
               -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
           [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::未找到公告分类。"; exit 1; }
 
-          discussions_json="$(jq -c '.data.repository.discussions.nodes' <<<"$context")"
+          discussions="$(jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context")"
 
           publish_once() {
             local marker="$1"
             local title="$2"
             local file="$3"
-            local existing_id
-            existing_id="$(jq -r --arg marker "$marker" '.[]? | select(.body | contains($marker)) | .id' <<<"$discussions_json" | head -n1)"
 
-            local body
-            body="$(cat "$file")"
-
-            if [ -n "$existing_id" ]; then
-              if [ "$BOOTSTRAP" = "true" ]; then
-                gh api graphql \
-                  -f query='mutation($discussion:ID!,$title:String!,$body:String!){updateDiscussion(input:{discussionId:$discussion,title:$title,body:$body}){discussion{url}}}' \
-                  -F discussion="$existing_id" -f title="$title" -f body="$body" >/dev/null
-                echo "已更新：$title"
-              else
-                echo "已发布，跳过：$marker"
-              fi
+            if grep -Fq "$marker" <<<"$discussions"; then
+              echo "已发布，跳过：$title"
               return 0
             fi
 
+            local body
+            body="$(cat "$file")"
             gh api graphql \
               -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
               -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body" >/dev/null
+            discussions+=$'\n'"$body"
             echo "已发布：$title"
           }
 
@@ -191,7 +177,7 @@ jobs:
 
               name="$(jq -r '.name' <<<"$repo")"
               url="$(jq -r '.html_url' <<<"$repo")"
-              marker="<!-- lingxi-auto:new-repo:$name -->"
+              marker="<!-- lingxi-auto:new-repo:zh:$name -->"
 
               cat > /tmp/item.md <<EOF
           $marker
@@ -201,7 +187,7 @@ jobs:
 
           **仓库地址：** $url
 
-          后续重要版本与开发进展可继续在公告分类中发布。
+          后续重要版本与开发进展可以继续在公告分类中发布。
           EOF
               publish_once "$marker" "[新仓库] $name" /tmp/item.md
             done < <(jq -c '.[] | select(.name != ".github")' <<<"$repos_json")
@@ -228,7 +214,7 @@ jobs:
               tag="$(jq -r '.tag_name' <<<"$release")"
               url="$(jq -r '.html_url' <<<"$release")"
               prerelease="$(jq -r 'if .prerelease then "是" else "否" end' <<<"$release")"
-              marker="<!-- lingxi-auto:release:$repo:$tag -->"
+              marker="<!-- lingxi-auto:release:zh:$repo:$tag -->"
 
               cat > /tmp/item.md <<EOF
           $marker
@@ -286,7 +272,7 @@ jobs:
 
               version_id="$(jq -r '.id' <<<"$version")"
               tags="$(jq -r '.metadata.container.tags // [] | join(", ")' <<<"$version")"
-              marker="<!-- lingxi-auto:package:$package_name:$version_id -->"
+              marker="<!-- lingxi-auto:package:zh:$package_name:$version_id -->"
               package_url="https://github.com/orgs/$ORG_NAME/packages/container/package/$encoded"
 
               cat > /tmp/item.md <<EOF
@@ -320,7 +306,7 @@ jobs:
 
           context="$(
             gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{id body}}}}' \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
               -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
@@ -330,7 +316,7 @@ jobs:
           if [ "$BOOTSTRAP" = "true" ]; then
             since="$(date -u -d '30 days ago' +%F)"
             period="当前开发快照"
-            marker="<!-- lingxi-auto:development-snapshot:v1 -->"
+            marker="<!-- lingxi-auto:development-snapshot:zh-v1 -->"
             title="[开发进展] 当前开发快照"
           else
             since="$(date -u -d '7 days ago' +%F)"
@@ -340,9 +326,8 @@ jobs:
             title="[开发进展] $week — LingXi 每周开发摘要"
           fi
 
-          existing_id="$(jq -r --arg marker "$marker" '.data.repository.discussions.nodes[]? | select(.body | contains($marker)) | .id' <<<"$context" | head -n1)"
-          if [ -n "$existing_id" ] && [ "$BOOTSTRAP" != "true" ]; then
-            echo "本周期开发摘要已存在，无需重复发布。"
+          if jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context" | grep -Fq "$marker"; then
+            echo "对应开发摘要已存在，无需重复发布。"
             exit 0
           fi
 
@@ -373,13 +358,6 @@ jobs:
           EOF
 
           body="$(cat /tmp/body.md)"
-          if [ -n "$existing_id" ]; then
-            gh api graphql \
-              -f query='mutation($discussion:ID!,$title:String!,$body:String!){updateDiscussion(input:{discussionId:$discussion,title:$title,body:$body}){discussion{url}}}' \
-              -F discussion="$existing_id" -f title="$title" -f body="$body"
-            echo "已更新现有开发快照。"
-          else
-            gh api graphql \
-              -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
-              -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"
-          fi
+          gh api graphql \
+            -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
+            -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"
