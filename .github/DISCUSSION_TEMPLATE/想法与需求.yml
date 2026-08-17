@@ -1,0 +1,58 @@
+title: "[需求] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        在实现之前请先说明真实需求和使用场景。维护者审批后，机器人会提供对应仓库的议题创建入口。
+  - type: dropdown
+    id: target_repository
+    attributes:
+      label: 目标仓库
+      description: 请选择最接近该需求的项目；不确定时可以交由维护者在审批时指定。
+      options:
+        - LingxiLearn
+        - LingxiGraph
+        - LingxiSkills
+        - LingxiIdentity
+        - LingxiNext
+        - 组织级 / 暂不确定
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: 需求场景
+      description: 谁在什么情况下需要这项能力？
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前问题
+      description: 现有能力为什么无法满足需求？请描述问题本身，不要直接指定实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+      description: 成功实现后，用户或开发者应该能够完成什么？
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: 参考资料
+      description: 可选。提供相关接口、项目、论文、截图或已有实现。
+    validations:
+      required: false
+  - type: dropdown
+    id: participation
+    attributes:
+      label: 参与意愿
+      options:
+        - 我愿意参与实现
+        - 我愿意参与测试或验收
+        - 我主要提出需求
+    validations:
+      required: true
