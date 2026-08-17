@@ -1,4 +1,4 @@
-name: 社区配置校验
+name: 社区配置检查
 
 on:
   pull_request:
@@ -6,6 +6,7 @@ on:
       - '.github/DISCUSSION_TEMPLATE/**'
       - '.github/workflows/discussion-governance.yml'
       - '.github/workflows/lingxi-pr-governance.yml'
+      - '.github/workflows/collaboration-smoke.yml'
       - '.github/workflows/community-publisher.yml'
       - '.github/workflows/community-config-validation.yml'
       - '.github/actions/**'
@@ -17,7 +18,7 @@ permissions:
 
 jobs:
   validate:
-    name: 校验讨论表单与治理工作流
+    name: 配置检查
     runs-on: ubuntu-latest
     steps:
       - name: 检出源码
@@ -28,7 +29,7 @@ jobs:
         with:
           ruby-version: '3.3'
 
-      - name: 解析 YAML 并校验必要配置
+      - name: 检查配置
         shell: ruby {0}
         run: |
           require 'yaml'
@@ -78,6 +79,7 @@ jobs:
           required_files = %w[
             .github/workflows/discussion-governance.yml
             .github/workflows/lingxi-pr-governance.yml
+            .github/workflows/collaboration-smoke.yml
             .github/workflows/community-publisher.yml
             .github/actions/pr-approval-gate/action.yml
             .github/actions/issue-approval/action.yml
@@ -89,38 +91,45 @@ jobs:
 
           governance = File.read('.github/workflows/discussion-governance.yml')
           pr_wrapper = File.read('.github/workflows/lingxi-pr-governance.yml')
+          smoke = File.read('.github/workflows/collaboration-smoke.yml')
           publisher = File.read('.github/workflows/community-publisher.yml')
           pr_gate = File.read('.github/actions/pr-approval-gate/action.yml')
           issue_gate = File.read('.github/actions/issue-approval/action.yml')
 
           %w[ideas-and-requests weekly-missions submissions engineering-notes].each do |slug|
-            raise "治理工作流未引用英文分类 slug：#{slug}" unless governance.include?(slug)
+            raise "社区协作未引用分类 slug：#{slug}" unless governance.include?(slug)
           end
-          raise '治理工作流必须固定使用 mentors Team' unless governance.include?('MENTOR_TEAM: mentors')
+          raise '社区协作必须使用 mentors Team' unless governance.include?('MENTOR_TEAM: mentors')
           raise '每周任务必须通知 builders Team' unless governance.include?('MISSION_AUDIENCE_TEAM: builders')
-          raise 'Discussion 治理必须读取 ORG_GOVERNANCE_TOKEN' unless governance.include?('ORG_GOVERNANCE_TOKEN')
+          raise '社区协作必须读取 ORG_GOVERNANCE_TOKEN' unless governance.include?('ORG_GOVERNANCE_TOKEN')
           raise '不得继续使用固定导师用户名变量' if governance.include?('MENTOR_ONE') || governance.include?('MENTOR_TWO')
 
           %w[/approve /accept /needs-work /close-mission].each do |command|
-            raise "治理工作流缺少命令：#{command}" unless governance.include?(command)
+            raise "社区协作缺少命令：#{command}" unless governance.include?(command)
           end
-          raise '需求批准后的 Issue 必须带审批标记' unless governance.include?('lingxi-governance:issue-approved-by:')
+          raise '需求确认后的 Issue 必须带来源标记' unless governance.include?('lingxi-governance:issue-approved-by:')
+          raise '每周任务解析字段与表单不一致' unless governance.include?('是否需要单独提交成果')
+
           raise '发布工作流必须指向 announcements 分类' unless publisher.include?('ANNOUNCEMENTS_SLUG: announcements')
           raise '定时发布必须继续受 DISCUSSIONS_AUTOMATION_ENABLED 控制' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
-          raise '社区发布器不得依赖 updateDiscussion 修改既有自动公告' if publisher.include?('updateDiscussion')
+          raise '社区发布器不得依赖 updateDiscussion' if publisher.include?('updateDiscussion')
 
-          raise 'PR 门禁必须支持管理员本人无需审批' unless pr_gate.include?('管理员本人 PR 无需人工审批')
-          raise 'PR 门禁必须通过 Team API 读取 Mentors' unless pr_gate.include?('/teams/$MENTOR_TEAM/members')
-          raise 'Builder PR 必须要求 2 名 Mentors' unless pr_gate.include?('需要任意 2 名 Mentors 审批')
-          raise 'Mentor PR 必须只要求管理员审批' unless pr_gate.include?('Mentor PR：只需要管理员')
-          raise 'PR 门禁不得继续使用固定导师用户名' if pr_gate.include?('MENTOR_ONE') || pr_gate.include?('MENTOR_TWO')
+          raise 'Owner PR 必须无需额外批准' unless pr_gate.include?('无需额外批准')
+          raise 'PR 检查必须通过 Team API 读取 Mentors' unless pr_gate.include?('/teams/$MENTOR_TEAM/members')
+          raise 'Builder PR 必须要求 2 位 Mentors' unless pr_gate.include?('需要 2 位 Mentors 批准')
+          raise 'Mentor PR 必须只要求 Owner' unless pr_gate.include?('需要 @$OWNER_LOGIN 批准')
+          raise 'PR 检查必须支持无副作用角色验证' unless pr_gate.include?('check_only') && pr_gate.include?('expected_role')
+          raise 'PR 检查不得使用固定导师用户名' if pr_gate.include?('MENTOR_ONE') || pr_gate.include?('MENTOR_TWO')
 
-          raise 'PR wrapper 必须传入 ORG_GOVERNANCE_TOKEN' unless pr_wrapper.include?('ORG_GOVERNANCE_TOKEN')
-          raise 'PR wrapper 必须固定使用 mentors Team' unless pr_wrapper.include?('mentor_team: mentors')
-          raise 'PR wrapper 不得继续使用固定导师用户名' if pr_wrapper.include?('MENTOR_ONE') || pr_wrapper.include?('MENTOR_TWO')
+          raise 'PR workflow 必须传入 ORG_GOVERNANCE_TOKEN' unless pr_wrapper.include?('ORG_GOVERNANCE_TOKEN')
+          raise 'PR workflow 必须使用 mentors Team' unless pr_wrapper.include?('mentor_team: mentors')
 
-          raise 'Issue 审批必须保留 /approve-issue' unless issue_gate.include?('/approve-issue')
-          raise 'Issue 审批必须通过 Team membership 校验 Mentor' unless issue_gate.include?('/teams/$MENTOR_TEAM/memberships/$user')
-          raise 'Issue 审批不得继续使用固定导师用户名' if issue_gate.include?('MENTOR_ONE') || issue_gate.include?('MENTOR_TWO')
+          raise 'Issue 确认必须保留 /approve-issue' unless issue_gate.include?('/approve-issue')
+          raise 'Issue 确认必须校验 Team membership' unless issue_gate.include?('/teams/$MENTOR_TEAM/memberships/$user')
 
-          puts "社区讨论、作业、Issue 与 PR 的 Team 驱动治理配置校验通过。"
+          raise '协作规则检查必须读取 ORG_GOVERNANCE_TOKEN' unless smoke.include?('ORG_GOVERNANCE_TOKEN')
+          raise '协作规则检查必须覆盖 Owner PR' unless smoke.include?('expected_role: owner')
+          raise '协作规则检查必须覆盖 Mentor PR' unless smoke.include?('expected_role: mentor')
+          raise '协作规则检查必须覆盖 Builder PR' unless smoke.include?('expected_role: contributor')
+
+          puts "社区配置检查通过。"

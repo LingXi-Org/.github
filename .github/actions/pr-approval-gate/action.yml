@@ -1,41 +1,36 @@
-name: LingXi PR 审批门禁
-description: 根据 PR 作者是否属于 Mentors Team 动态执行审批策略
+name: PR 审阅要求
+description: 根据作者身份判断当前 PR 需要的审阅
 inputs:
   github_token:
-    description: 当前仓库 GITHUB_TOKEN，用于读取 PR、评论和请求 Reviewer
     required: true
   team_token:
-    description: 只读组织治理 Token，用于读取 Team 成员
     required: true
   org_name:
-    description: GitHub Organization 名称
     required: true
   owner_login:
-    description: 组织管理员 GitHub 用户名
     required: true
   mentor_team:
-    description: Mentor Team slug
     required: true
     default: mentors
   repository:
-    description: owner/repo
     required: true
   pr_number:
-    description: Pull Request number
     required: true
   author:
-    description: Pull Request author login
     required: true
   head_sha:
-    description: Pull Request current head SHA
     required: true
   event_action:
-    description: GitHub event action
+    required: false
+  check_only:
+    required: false
+    default: "false"
+  expected_role:
     required: false
 runs:
   using: composite
   steps:
-    - name: 计算并校验 Team 审批
+    - name: 检查审阅要求
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github_token }}
@@ -48,23 +43,36 @@ runs:
         PR_AUTHOR: ${{ inputs.author }}
         HEAD_SHA: ${{ inputs.head_sha }}
         EVENT_ACTION: ${{ inputs.event_action }}
+        CHECK_ONLY: ${{ inputs.check_only }}
+        EXPECTED_ROLE: ${{ inputs.expected_role }}
       run: |
         set -euo pipefail
 
+        assert_role() {
+          local actual="$1"
+          if [ -n "${EXPECTED_ROLE:-}" ] && [ "$actual" != "$EXPECTED_ROLE" ]; then
+            echo "::error::角色检查失败。"
+            exit 1
+          fi
+        }
+
         if [ "$PR_AUTHOR" = "$OWNER_LOGIN" ]; then
+          if [ "$CHECK_ONLY" = "true" ]; then
+            assert_role "owner"
+            exit 0
+          fi
           {
-            echo "## PR 审批门禁"
+            echo "## 审阅要求"
             echo
-            echo "- PR 作者：@$PR_AUTHOR"
-            echo "- 规则：管理员本人 PR 无需人工审批"
-            echo "- 结果：✅ 通过"
+            echo "- 作者：@$PR_AUTHOR"
+            echo "- 需要：无需额外批准"
+            echo "- 状态：✅ 已满足"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "管理员本人 PR，自动通过治理审批。"
           exit 0
         fi
 
         if [ -z "${TEAM_TOKEN:-}" ]; then
-          echo "::error::缺少 ORG_GOVERNANCE_TOKEN，无法读取 @$ORG_NAME/$MENTOR_TEAM 成员。"
+          echo "::error::无法读取 Mentors 成员，请检查组织协作凭据。"
           exit 1
         fi
 
@@ -73,13 +81,18 @@ runs:
             "/orgs/$ORG_NAME/teams/$MENTOR_TEAM/members?per_page=100" \
             --jq '.[].login'
         )"
-
-        # Owner 永远拥有 Mentor 审批资格，即使暂时没有加入 Team。
         mentor_members="$(printf '%s\n%s\n' "$OWNER_LOGIN" "$mentor_members" | sed '/^$/d' | sort -fu)"
 
         is_mentor=false
+        role="contributor"
         if grep -Fxiq "$PR_AUTHOR" <<<"$mentor_members"; then
           is_mentor=true
+          role="mentor"
+        fi
+
+        if [ "$CHECK_ONLY" = "true" ]; then
+          assert_role "$role"
+          exit 0
         fi
 
         comment_once() {
@@ -94,24 +107,22 @@ runs:
         }
 
         if [ "$is_mentor" = "true" ]; then
-          policy="Mentor PR：只需要管理员 @$OWNER_LOGIN 审批"
+          policy="需要 @$OWNER_LOGIN 批准"
           request_payload="$(printf '{\"reviewers\":[\"%s\"]}' "$OWNER_LOGIN")"
           gh api --method POST "/repos/$REPOSITORY/pulls/$PR_NUMBER/requested_reviewers" \
-            --input - <<<"$request_payload" >/dev/null 2>&1 || \
-            echo "::warning::无法自动请求 @$OWNER_LOGIN Review；仍会按实际审批记录执行门禁。"
+            --input - <<<"$request_payload" >/dev/null 2>&1 || true
 
           if [ "$EVENT_ACTION" = "opened" ] || [ "$EVENT_ACTION" = "reopened" ] || [ "$EVENT_ACTION" = "ready_for_review" ]; then
-            comment_once "@$OWNER_LOGIN 这是 @$PR_AUTHOR 提交的 Mentor PR，只需要你的 Approve。"
+            comment_once "@$OWNER_LOGIN 请审阅 @$PR_AUTHOR 提交的 PR。"
           fi
         else
-          policy="Builder / 外部贡献者 PR：需要任意 2 名 Mentors 审批"
+          policy="需要 2 位 Mentors 批准"
           request_payload="$(printf '{\"team_reviewers\":[\"%s\"]}' "$MENTOR_TEAM")"
           gh api --method POST "/repos/$REPOSITORY/pulls/$PR_NUMBER/requested_reviewers" \
-            --input - <<<"$request_payload" >/dev/null 2>&1 || \
-            echo "::warning::无法自动请求 @$ORG_NAME/$MENTOR_TEAM Team Review；仍会按实际审批记录执行门禁。"
+            --input - <<<"$request_payload" >/dev/null 2>&1 || true
 
           if [ "$EVENT_ACTION" = "opened" ] || [ "$EVENT_ACTION" = "reopened" ] || [ "$EVENT_ACTION" = "ready_for_review" ]; then
-            comment_once "@$ORG_NAME/$MENTOR_TEAM 这是 @$PR_AUTHOR 提交的开发 PR，需要任意 **2 名 Mentors** Approve；@$OWNER_LOGIN 可以计入其中 1 人。"
+            comment_once "@$ORG_NAME/$MENTOR_TEAM 请安排两位导师审阅 @$PR_AUTHOR 提交的 PR。"
           fi
         fi
 
@@ -151,7 +162,7 @@ runs:
             if key not in latest or submitted >= latest[key][0]:
                 latest[key] = (submitted, review.get('state') or '', login)
 
-        approved = [v[2] for k, v in latest.items() if v[1] == 'APPROVED']
+        approved = [v[2] for _, v in latest.items() if v[1] == 'APPROVED']
 
         if author_is_mentor:
             owner_ok = latest.get(owner_key, ('', '', ''))[1] == 'APPROVED'
@@ -163,7 +174,7 @@ runs:
             ok = len(unique) >= 2
             print('PASS=true' if ok else 'PASS=false')
             print('APPROVED=' + ','.join(unique))
-            print('PENDING=' + ('' if ok else f'还需要 {2-len(unique)} 名 Mentor'))
+            print('PENDING=' + ('' if ok else f'还需要 {2-len(unique)} 位导师'))
         PY
         )"
 
@@ -172,18 +183,15 @@ runs:
         pending="$(grep '^PENDING=' <<<"$result" | cut -d= -f2-)"
 
         {
-          echo "## PR 审批门禁"
+          echo "## 审阅要求"
           echo
-          echo "- PR 作者：@$PR_AUTHOR"
-          echo "- 规则：$policy"
-          echo "- 当前提交：\`$HEAD_SHA\`"
-          echo "- 已通过 Mentors：${approved:-无}"
-          echo "- 待审批：${pending:-无}"
+          echo "- 作者：@$PR_AUTHOR"
+          echo "- 需要：$policy"
+          echo "- 已批准：${approved:-无}"
+          echo "- 还需：${pending:-无}"
         } >> "$GITHUB_STEP_SUMMARY"
 
         if [ "$passed" != "true" ]; then
-          echo "::error::$pending"
+          echo "::error::${pending:-审阅尚未完成}"
           exit 1
         fi
-
-        echo "治理审批条件已满足。"

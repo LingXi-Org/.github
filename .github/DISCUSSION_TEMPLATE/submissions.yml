@@ -3,12 +3,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        仅当每周任务要求“独立提交”时使用本表单。成果不限定为代码：可以直接填写文档，也可以提交外部链接、技术札记、PR、Demo、实验报告等。请至少填写“成果链接”或“提交内容”中的一项。
+        仅在任务要求单独提交时使用。你可以直接填写成果，也可以提交链接。
   - type: input
     id: mission_url
     attributes:
       label: 关联任务
-      description: 填写对应每周任务的讨论链接。
+      description: 填写对应每周任务的链接。
       placeholder: "https://github.com/orgs/LingXi-Org/discussions/..."
     validations:
       required: true
@@ -17,10 +17,10 @@ body:
     attributes:
       label: 成果类型
       options:
-        - 文档 / 报告（直接填写）
-        - 外部链接 / 作品
-        - 技术札记（Engineering Notes）
-        - Pull Request
+        - 文档 / 报告
+        - 外部作品 / 链接
+        - 技术札记
+        - 代码提交（PR）
         - Issue 参与结果
         - Demo / 实验结果
         - 仓库 / 项目
@@ -37,6 +37,7 @@ body:
         - LingxiSkills
         - LingxiIdentity
         - LingxiNext
+        - Coze-Chainlit
         - .github / 组织社区
         - 无需代码仓库
         - 独立 / 外部仓库
@@ -46,35 +47,35 @@ body:
     id: artifact_url
     attributes:
       label: 成果链接
-      description: 可选。可以填写技术札记、PR、Issue、仓库、文档、Demo 或其他作品链接。
+      description: 可选。可以填写技术札记、PR、Issue、文档、Demo 或其他作品链接。
       placeholder: "https://..."
     validations:
       required: false
   - type: textarea
     id: submitted_content
     attributes:
-      label: 提交内容
-      description: 可选。可以直接在这里提交短文档、报告、结论或成果正文；如果成果全部在链接中，可简要说明。
+      label: 成果正文
+      description: 可选。可以直接粘贴文档、报告、结论或其他成果内容。
     validations:
       required: false
   - type: textarea
     id: result
     attributes:
       label: 完成说明
-      description: 说明你完成了什么，以及它如何对应任务要求。
+      description: 简要说明你完成了什么，以及如何对应任务要求。
     validations:
       required: true
   - type: textarea
     id: validation
     attributes:
-      label: 验证 / 证据
-      description: 可选。可提供测试结果、截图、数据、复现步骤或其他证据。
+      label: 证明材料
+      description: 可选。可以附上测试结果、截图、数据或复现步骤。
     validations:
       required: false
   - type: textarea
     id: reflection
     attributes:
       label: 复盘
-      description: 可选。记录遇到的问题、取舍、收获和后续可以继续改进的方向。
+      description: 可选。记录遇到的问题、收获或后续可以继续改进的方向。
     validations:
       required: false

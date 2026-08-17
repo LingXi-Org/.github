@@ -3,7 +3,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        用于发布 LingXi 的官方组织动态。请优先提供可验证的链接，并保持标题清晰、可检索。
+        用于发布 LingXi 的重要动态。请写清楚发生了什么、影响什么，并附上相关链接。
   - type: dropdown
     id: update_type
     attributes:
@@ -21,20 +21,20 @@ body:
     id: summary
     attributes:
       label: 摘要
-      description: 用几句话说明发生了什么，以及开发者为什么需要关注。
+      description: 用 2–3 句话说明本次更新。
     validations:
       required: true
   - type: textarea
     id: details
     attributes:
       label: 详细内容
-      description: 说明版本、能力、兼容性、迁移要求或其他必要信息。
+      description: 补充主要变化、影响和需要注意的事项。
     validations:
       required: true
   - type: textarea
     id: links
     attributes:
       label: 相关链接
-      description: 提供版本页面、软件包、仓库、文档或拉取请求链接。
+      description: 可填写仓库、版本、文档或 Pull Request 链接。
     validations:
       required: false
