@@ -1,0 +1,346 @@
+name: Community Publisher
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What should be published
+        required: true
+        default: bootstrap
+        type: choice
+        options:
+          - bootstrap
+          - sync
+          - digest
+  schedule:
+    - cron: "17 */6 * * *"
+    - cron: "0 12 * * 0"
+
+permissions:
+  contents: read
+  discussions: write
+  packages: read
+
+env:
+  ORG_NAME: LingXi-Org
+  SOURCE_REPO: .github
+  ANNOUNCEMENTS_SLUG: announcements
+
+jobs:
+  bootstrap:
+    name: Publish organization overview
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish overview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          context="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}}}}' \
+              -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
+          )"
+          repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
+          category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
+
+          if [ -z "$repo_id" ] || [ -z "$category_id" ]; then
+            echo "::error::Enable Organization Discussions with LingXi-Org/.github as source and create the Announcements category first."
+            exit 1
+          fi
+
+          marker="<!-- lingxi-auto:organization-overview:v1 -->"
+          exists="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
+              -F owner="$ORG_NAME" -F name="$SOURCE_REPO" \
+              --jq '.data.repository.discussions.nodes[]?.body' \
+              | grep -F "$marker" || true
+          )"
+          if [ -n "$exists" ]; then
+            echo "Organization overview already exists."
+            exit 0
+          fi
+
+          repos="$(
+            gh api --paginate "/orgs/$ORG_NAME/repos?type=public&per_page=100" \
+              --jq '.[] | [.name, (.description // ""), .html_url] | @tsv'
+          )"
+
+          cat > /tmp/body.md <<EOF
+          $marker
+          # LingXi
+
+          **Everything is a Skill. State decides next.**
+
+          LingXi 是围绕 AI 学习产品、持久化 Agent Runtime、开放 Skills 与统一身份能力持续演进的开源工程体系。
+
+          ## Core stack
+
+          | Project | Role |
+          | --- | --- |
+          | [LingxiLearn](https://github.com/$ORG_NAME/LingxiLearn) | 面向个人学习任务的多智能体 AI 学习工作台 |
+          | [LingxiGraph](https://github.com/$ORG_NAME/LingxiGraph) | 可恢复、可持久化、可审计的 Agent 图运行时 |
+          | [LingxiSkills](https://github.com/$ORG_NAME/LingxiSkills) | 可复用 Agent Skills 与人类可读技能文档 |
+          | [LingxiIdentity](https://github.com/$ORG_NAME/LingxiIdentity) | LingXi 的统一身份与 OIDC 边界 |
+          | [LingxiNext](https://github.com/$ORG_NAME/LingxiNext) | 基于 LingxiGraph 的多智能体编排与运行体验 |
+
+          ## Repository map
+
+          EOF
+
+          while IFS=$'\t' read -r name description url; do
+            [ "$name" = ".github" ] && continue
+            printf -- "- **[%s](%s)** — %s\n" "$name" "$url" "${description:-No description}" >> /tmp/body.md
+          done <<<"$repos"
+
+          cat >> /tmp/body.md <<'EOF'
+
+          ## Community
+
+          - **Ideas and Requests**：提出需求，在维护者审批后进入对应仓库 Issue。
+          - **Build Lab / Weekly Missions**：参与周期性工程与研究任务。
+          - **Build Lab / Submissions**：提交独立成果、PR、Demo 与验证结果。
+          - **Engineering Notes**：沉淀架构、工程、研究与实验文章。
+
+          Release、GitHub Package、新仓库和每周开发摘要由社区自动化持续同步到本分类。
+          EOF
+
+          title="Welcome to LingXi — Architecture, Projects & Current Status"
+          body="$(cat /tmp/body.md)"
+          gh api graphql \
+            -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
+            -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"
+
+  sync:
+    name: Sync releases packages and repositories
+    if: >-
+      (github.event_name == 'workflow_dispatch' && (inputs.action == 'bootstrap' || inputs.action == 'sync')) ||
+      (github.event_name == 'schedule' && github.event.schedule == '17 */6 * * *' && vars.DISCUSSIONS_AUTOMATION_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish new development events
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          context="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}}}}' \
+              -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
+          )"
+          repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
+          category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::Missing Announcements category."; exit 1; }
+
+          discussions="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
+              -F owner="$ORG_NAME" -F name="$SOURCE_REPO" \
+              --jq '.data.repository.discussions.nodes[]?.body' || true
+          )"
+
+          publish_once() {
+            local marker="$1"
+            local title="$2"
+            local file="$3"
+            if grep -Fq "$marker" <<<"$discussions"; then
+              echo "Already published: $marker"
+              return 0
+            fi
+            local body
+            body="$(cat "$file")"
+            gh api graphql \
+              -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
+              -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body" >/dev/null
+            discussions+=$'\n'"$body"
+            echo "Published: $title"
+          }
+
+          now_epoch="$(date -u +%s)"
+          cutoff_epoch="$((now_epoch - 48 * 3600))"
+          repos_json="$(gh api --paginate "/orgs/$ORG_NAME/repos?type=public&per_page=100")"
+
+          if [ "$BOOTSTRAP" != "true" ]; then
+            jq -c '.[] | select(.name != ".github")' <<<"$repos_json" | while read -r repo; do
+              created="$(jq -r '.created_at' <<<"$repo")"
+              created_epoch="$(date -u -d "$created" +%s)"
+              [ "$created_epoch" -lt "$cutoff_epoch" ] && continue
+              name="$(jq -r '.name' <<<"$repo")"
+              url="$(jq -r '.html_url' <<<"$repo")"
+              description="$(jq -r '.description // "No description"' <<<"$repo")"
+              marker="<!-- lingxi-auto:new-repo:$name -->"
+
+              cat > /tmp/item.md <<EOF
+          $marker
+          # New repository: $name
+
+          $description
+
+          **Repository:** $url
+
+          这是 LingXi 组织自动发布的新仓库通知。后续重要版本与开发进展会继续同步到 Announcements。
+          EOF
+              publish_once "$marker" "[New Repository] $name" /tmp/item.md
+            done
+          fi
+
+          jq -r '.[].full_name' <<<"$repos_json" | while read -r full_name; do
+            releases="$(gh api "/repos/$full_name/releases?per_page=10" 2>/dev/null || echo '[]')"
+            if [ "$BOOTSTRAP" = "true" ]; then
+              releases="$(jq '[map(select(.draft == false))[0]] | map(select(. != null))' <<<"$releases")"
+            fi
+
+            jq -c '.[] | select(.draft == false)' <<<"$releases" | while read -r release; do
+              if [ "$BOOTSTRAP" != "true" ]; then
+                published="$(jq -r '.published_at // .created_at' <<<"$release")"
+                published_epoch="$(date -u -d "$published" +%s)"
+                [ "$published_epoch" -lt "$cutoff_epoch" ] && continue
+              fi
+
+              repo="${full_name#*/}"
+              tag="$(jq -r '.tag_name' <<<"$release")"
+              name="$(jq -r '.name // empty' <<<"$release")"
+              url="$(jq -r '.html_url' <<<"$release")"
+              prerelease="$(jq -r '.prerelease' <<<"$release")"
+              marker="<!-- lingxi-auto:release:$repo:$tag -->"
+
+              cat > /tmp/item.md <<EOF
+          $marker
+          # $repo $tag
+
+          ${name:-Release $tag}
+
+          - **Repository:** https://github.com/$full_name
+          - **Release:** $url
+          - **Prerelease:** $prerelease
+
+          完整变更、安装与迁移信息以 Release 页面为准。
+          EOF
+              publish_once "$marker" "[Release] $repo $tag" /tmp/item.md
+            done
+          done
+
+          packages="$(gh api "/orgs/$ORG_NAME/packages?package_type=container&per_page=100" 2>/dev/null || echo '[]')"
+          jq -c '.[]?' <<<"$packages" | while read -r package; do
+            package_name="$(jq -r '.name' <<<"$package")"
+            encoded="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$package_name")"
+            versions="$(gh api "/orgs/$ORG_NAME/packages/container/$encoded/versions?per_page=5" 2>/dev/null || echo '[]')"
+            if [ "$BOOTSTRAP" = "true" ]; then
+              versions="$(jq '.[0:1]' <<<"$versions")"
+            fi
+
+            jq -c '.[]?' <<<"$versions" | while read -r version; do
+              created="$(jq -r '.created_at' <<<"$version")"
+              created_epoch="$(date -u -d "$created" +%s)"
+              if [ "$BOOTSTRAP" != "true" ] && [ "$created_epoch" -lt "$cutoff_epoch" ]; then
+                continue
+              fi
+
+              version_id="$(jq -r '.id' <<<"$version")"
+              tags="$(jq -r '.metadata.container.tags // [] | join(", ")' <<<"$version")"
+              marker="<!-- lingxi-auto:package:$package_name:$version_id -->"
+              package_url="https://github.com/orgs/$ORG_NAME/packages/container/package/$encoded"
+
+              cat > /tmp/item.md <<EOF
+          $marker
+          # Package update: $package_name
+
+          - **Package:** $package_url
+          - **Tags:** ${tags:-untagged}
+          - **Published:** $created
+
+          该通知由 LingXi 社区发布器从 GitHub Packages 自动同步。
+          EOF
+              publish_once "$marker" "[Package] $package_name ${tags:+— $tags}" /tmp/item.md
+            done
+          done
+
+  digest:
+    name: Publish weekly development digest
+    if: >-
+      (github.event_name == 'workflow_dispatch' && (inputs.action == 'bootstrap' || inputs.action == 'digest')) ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 12 * * 0' && vars.DISCUSSIONS_AUTOMATION_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          context="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}}}}' \
+              -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
+          )"
+          repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
+          category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
+          [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::Missing Announcements category."; exit 1; }
+
+          if [ "$BOOTSTRAP" = "true" ]; then
+            since="$(date -u -d '30 days ago' +%F)"
+            period="Current Development Snapshot"
+            marker="<!-- lingxi-auto:development-snapshot:v1 -->"
+            title="[Progress] Current Development Snapshot"
+          else
+            since="$(date -u -d '7 days ago' +%F)"
+            week="$(date -u +%G-W%V)"
+            period="$week"
+            marker="<!-- lingxi-auto:weekly-digest:$week -->"
+            title="[Progress] $week — LingXi Weekly Development Digest"
+          fi
+
+          existing="$(
+            gh api graphql \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
+              -F owner="$ORG_NAME" -F name="$SOURCE_REPO" \
+              --jq '.data.repository.discussions.nodes[]?.body' \
+              | grep -F "$marker" || true
+          )"
+          [ -z "$existing" ] || { echo "Digest already exists."; exit 0; }
+
+          query="org:$ORG_NAME is:pr is:merged merged:>=$since"
+          prs="$(gh api --method GET /search/issues -f q="$query" -f per_page=100 --jq '.items')"
+
+          cat > /tmp/body.md <<EOF
+          $marker
+          # $period
+
+          本摘要自动聚合 LingXi 组织最近的合并开发活动，便于社区快速了解当前工程方向。
+
+          ## Merged pull requests
+
+          EOF
+
+          count="$(jq 'length' <<<"$prs")"
+          if [ "$count" -eq 0 ]; then
+            echo "- 本周期没有检索到已合并 PR。" >> /tmp/body.md
+          else
+            jq -r '.[] | "- [\(.title)](\(.html_url)) — @\(.user.login)"' <<<"$prs" >> /tmp/body.md
+          fi
+
+          cat >> /tmp/body.md <<EOF
+
+          ## Continue building
+
+          - 提需求：**Ideas and Requests**
+          - 参加任务：**Build Lab → Weekly Missions**
+          - 提交成果：**Build Lab → Submissions**
+          - 阅读或分享技术文章：**Engineering Notes**
+
+          > 本文由 GitHub Actions 自动生成。涉及具体兼容性、迁移和发布内容时，请以对应 Release、Issue 和 PR 为准。
+          EOF
+
+          body="$(cat /tmp/body.md)"
+          gh api graphql \
+            -f query='mutation($repository:ID!,$category:ID!,$title:String!,$body:String!){createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}){discussion{url}}}' \
+            -F repository="$repo_id" -F category="$category_id" -f title="$title" -f body="$body"

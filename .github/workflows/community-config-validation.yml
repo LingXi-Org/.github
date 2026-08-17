@@ -1,0 +1,73 @@
+name: Community config validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/DISCUSSION_TEMPLATE/**'
+      - '.github/workflows/discussion-governance.yml'
+      - '.github/workflows/community-publisher.yml'
+      - '.github/workflows/community-config-validation.yml'
+      - 'docs/community-discussions.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate discussion forms and workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Parse YAML and validate required forms
+        shell: ruby {0}
+        run: |
+          require 'yaml'
+
+          forms = {
+            'announcements' => '.github/DISCUSSION_TEMPLATE/announcements.yml',
+            'ideas-and-requests' => '.github/DISCUSSION_TEMPLATE/ideas-and-requests.yml',
+            'weekly-missions' => '.github/DISCUSSION_TEMPLATE/weekly-missions.yml',
+            'submissions' => '.github/DISCUSSION_TEMPLATE/submissions.yml',
+            'engineering-notes' => '.github/DISCUSSION_TEMPLATE/engineering-notes.yml'
+          }
+
+          forms.each do |slug, path|
+            raise "Missing #{path}" unless File.file?(path)
+            data = YAML.safe_load(File.read(path), aliases: false)
+            raise "#{path}: body must be a non-empty array" unless data.is_a?(Hash) && data['body'].is_a?(Array) && !data['body'].empty?
+            raise "#{path}: at least one non-markdown field is required" unless data['body'].any? { |field| field['type'] != 'markdown' }
+
+            ids = data['body'].filter_map { |field| field['id'] }
+            raise "#{path}: duplicate field id" unless ids.uniq.length == ids.length
+          end
+
+          workflow_paths = %w[
+            .github/workflows/discussion-governance.yml
+            .github/workflows/community-publisher.yml
+          ]
+
+          workflow_paths.each do |path|
+            raise "Missing #{path}" unless File.file?(path)
+            YAML.safe_load(File.read(path), aliases: false)
+          end
+
+          governance = File.read('.github/workflows/discussion-governance.yml')
+          publisher = File.read('.github/workflows/community-publisher.yml')
+
+          forms.keys.each do |slug|
+            next if slug == 'announcements' && publisher.include?(slug)
+            raise "Workflow configuration does not reference category slug #{slug}" unless governance.include?(slug)
+          end
+
+          raise 'Publisher must target Announcements' unless publisher.include?('ANNOUNCEMENTS_SLUG: announcements')
+          raise 'Scheduled publisher must remain gated by DISCUSSIONS_AUTOMATION_ENABLED' unless publisher.include?('DISCUSSIONS_AUTOMATION_ENABLED')
+
+          puts "Validated #{forms.length} Discussion Forms and #{workflow_paths.length} community workflows."

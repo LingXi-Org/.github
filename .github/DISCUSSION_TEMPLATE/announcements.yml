@@ -1,0 +1,40 @@
+title: "[Announcement] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        用于发布 LingXi 的官方组织动态。请优先提供可验证的链接，并保持标题可检索。
+  - type: dropdown
+    id: update_type
+    attributes:
+      label: 更新类型 / Update type
+      options:
+        - 项目总览 / Project overview
+        - Release
+        - Package
+        - 开发进展 / Development progress
+        - 新仓库 / New repository
+        - 重要变更 / Important change
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: 摘要 / Summary
+      description: 用几句话说明发生了什么，以及开发者为什么需要关注。
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 详细内容 / Details
+      description: 说明版本、能力、兼容性、迁移要求或其他必要信息。
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: 相关链接 / Links
+      description: Release、Package、Repository、文档或 PR 链接。
+    validations:
+      required: false
