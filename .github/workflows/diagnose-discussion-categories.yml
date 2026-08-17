@@ -25,3 +25,26 @@ jobs:
             -F owner='LingXi-Org' \
             -F name='.github' \
             --jq '.data.repository.discussionCategories.nodes'
+
+      - name: 检查新建讨论页面是否包含结构化字段
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://github.com/orgs/LingXi-Org/discussions/new?category=%E6%83%B3%E6%B3%95%E4%B8%8E%E9%9C%80%E6%B1%82'
+          code="$(curl -sS -L -o /tmp/discussion.html -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: text/html' \
+            "$url")"
+          echo "HTTP: $code"
+          echo "目标仓库字段: $(grep -Fq '目标仓库' /tmp/discussion.html && echo FOUND || echo MISSING)"
+          echo "需求场景字段: $(grep -Fq '需求场景' /tmp/discussion.html && echo FOUND || echo MISSING)"
+          echo "登录页面: $(grep -Eiq 'Sign in|登录' /tmp/discussion.html && echo YES || echo NO)"
+          echo "页面标题: $(python3 - <<'PY'
+          import re
+          text = open('/tmp/discussion.html', encoding='utf-8', errors='ignore').read()
+          m = re.search(r'<title[^>]*>(.*?)</title>', text, re.S | re.I)
+          print(re.sub(r'\s+', ' ', m.group(1)).strip() if m else 'UNKNOWN')
+          PY
+          )"
