@@ -22,6 +22,11 @@ inputs:
     required: true
   event_action:
     required: false
+  check_only:
+    required: false
+    default: "false"
+  expected_role:
+    required: false
 runs:
   using: composite
   steps:
@@ -38,10 +43,24 @@ runs:
         PR_AUTHOR: ${{ inputs.author }}
         HEAD_SHA: ${{ inputs.head_sha }}
         EVENT_ACTION: ${{ inputs.event_action }}
+        CHECK_ONLY: ${{ inputs.check_only }}
+        EXPECTED_ROLE: ${{ inputs.expected_role }}
       run: |
         set -euo pipefail
 
+        assert_role() {
+          local actual="$1"
+          if [ -n "${EXPECTED_ROLE:-}" ] && [ "$actual" != "$EXPECTED_ROLE" ]; then
+            echo "::error::角色检查失败。"
+            exit 1
+          fi
+        }
+
         if [ "$PR_AUTHOR" = "$OWNER_LOGIN" ]; then
+          if [ "$CHECK_ONLY" = "true" ]; then
+            assert_role "owner"
+            exit 0
+          fi
           {
             echo "## 审阅要求"
             echo
@@ -65,8 +84,15 @@ runs:
         mentor_members="$(printf '%s\n%s\n' "$OWNER_LOGIN" "$mentor_members" | sed '/^$/d' | sort -fu)"
 
         is_mentor=false
+        role="contributor"
         if grep -Fxiq "$PR_AUTHOR" <<<"$mentor_members"; then
           is_mentor=true
+          role="mentor"
+        fi
+
+        if [ "$CHECK_ONLY" = "true" ]; then
+          assert_role "$role"
+          exit 0
         fi
 
         comment_once() {
