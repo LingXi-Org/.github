@@ -41,7 +41,7 @@ jobs:
 
           context="$(
             gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}}}}' \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
               -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
@@ -53,20 +53,13 @@ jobs:
           fi
 
           marker="<!-- lingxi-auto:organization-overview:v1 -->"
-          exists="$(
-            gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
-              -F owner="$ORG_NAME" -F name="$SOURCE_REPO" \
-              --jq '.data.repository.discussions.nodes[]?.body' \
-              | grep -F "$marker" || true
-          )"
-          if [ -n "$exists" ]; then
+          if jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context" | grep -Fq "$marker"; then
             echo "Organization overview already exists."
             exit 0
           fi
 
           repos="$(
-            gh api --paginate "/orgs/$ORG_NAME/repos?type=public&per_page=100" \
+            gh api "/orgs/$ORG_NAME/repos?type=public&per_page=100" \
               --jq '.[] | [.name, (.description // ""), .html_url] | @tsv'
           )"
 
@@ -106,7 +99,7 @@ jobs:
           - **Build Lab / Submissions**：提交独立成果、PR、Demo 与验证结果。
           - **Engineering Notes**：沉淀架构、工程、研究与实验文章。
 
-          Release、GitHub Package、新仓库和每周开发摘要由社区自动化持续同步到本分类。
+          Release、新仓库和每周开发摘要由社区自动化持续同步到本分类。配置可选的 `ORG_PACKAGE_TOKEN` 后，也会同步组织级 GHCR Package。
           EOF
 
           title="Welcome to LingXi — Architecture, Projects & Current Status"
@@ -125,6 +118,7 @@ jobs:
       - name: Publish new development events
         env:
           GH_TOKEN: ${{ github.token }}
+          ORG_PACKAGE_TOKEN: ${{ secrets.ORG_PACKAGE_TOKEN }}
           BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'bootstrap' }}
         shell: bash
         run: |
@@ -132,19 +126,14 @@ jobs:
 
           context="$(
             gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}}}}' \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
               -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
           category_id="$(jq -r --arg slug "$ANNOUNCEMENTS_SLUG" '.data.repository.discussionCategories.nodes[] | select(.slug==$slug) | .id' <<<"$context")"
           [ -n "$repo_id" ] && [ -n "$category_id" ] || { echo "::error::Missing Announcements category."; exit 1; }
 
-          discussions="$(
-            gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
-              -F owner="$ORG_NAME" -F name="$SOURCE_REPO" \
-              --jq '.data.repository.discussions.nodes[]?.body' || true
-          )"
+          discussions="$(jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context")"
 
           publish_once() {
             local marker="$1"
@@ -154,6 +143,7 @@ jobs:
               echo "Already published: $marker"
               return 0
             fi
+
             local body
             body="$(cat "$file")"
             gh api graphql \
@@ -163,15 +153,27 @@ jobs:
             echo "Published: $title"
           }
 
+          json_array_or_empty() {
+            local value="$1"
+            if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$value"; then
+              printf '%s\n' "$value"
+            else
+              printf '[]\n'
+            fi
+          }
+
           now_epoch="$(date -u +%s)"
           cutoff_epoch="$((now_epoch - 48 * 3600))"
-          repos_json="$(gh api --paginate "/orgs/$ORG_NAME/repos?type=public&per_page=100")"
+          repos_json="$(gh api "/orgs/$ORG_NAME/repos?type=public&per_page=100")"
+          repos_json="$(json_array_or_empty "$repos_json")"
 
           if [ "$BOOTSTRAP" != "true" ]; then
-            jq -c '.[] | select(.name != ".github")' <<<"$repos_json" | while read -r repo; do
+            while read -r repo; do
+              [ -n "$repo" ] || continue
               created="$(jq -r '.created_at' <<<"$repo")"
               created_epoch="$(date -u -d "$created" +%s)"
               [ "$created_epoch" -lt "$cutoff_epoch" ] && continue
+
               name="$(jq -r '.name' <<<"$repo")"
               url="$(jq -r '.html_url' <<<"$repo")"
               description="$(jq -r '.description // "No description"' <<<"$repo")"
@@ -188,16 +190,20 @@ jobs:
           这是 LingXi 组织自动发布的新仓库通知。后续重要版本与开发进展会继续同步到 Announcements。
           EOF
               publish_once "$marker" "[New Repository] $name" /tmp/item.md
-            done
+            done < <(jq -c '.[] | select(.name != ".github")' <<<"$repos_json")
           fi
 
-          jq -r '.[].full_name' <<<"$repos_json" | while read -r full_name; do
-            releases="$(gh api "/repos/$full_name/releases?per_page=10" 2>/dev/null || echo '[]')"
+          while read -r full_name; do
+            [ -n "$full_name" ] || continue
+            releases="$(gh api "/repos/$full_name/releases?per_page=10" 2>/dev/null || true)"
+            releases="$(json_array_or_empty "$releases")"
+
             if [ "$BOOTSTRAP" = "true" ]; then
               releases="$(jq '[map(select(.draft == false))[0]] | map(select(. != null))' <<<"$releases")"
             fi
 
-            jq -c '.[] | select(.draft == false)' <<<"$releases" | while read -r release; do
+            while read -r release; do
+              [ -n "$release" ] || continue
               if [ "$BOOTSTRAP" != "true" ]; then
                 published="$(jq -r '.published_at // .created_at' <<<"$release")"
                 published_epoch="$(date -u -d "$published" +%s)"
@@ -224,19 +230,43 @@ jobs:
           完整变更、安装与迁移信息以 Release 页面为准。
           EOF
               publish_once "$marker" "[Release] $repo $tag" /tmp/item.md
-            done
-          done
+            done < <(jq -c '.[] | select(.draft == false)' <<<"$releases")
+          done < <(jq -r '.[].full_name' <<<"$repos_json")
 
-          packages="$(gh api "/orgs/$ORG_NAME/packages?package_type=container&per_page=100" 2>/dev/null || echo '[]')"
-          jq -c '.[]?' <<<"$packages" | while read -r package; do
+          package_token="${ORG_PACKAGE_TOKEN:-$GH_TOKEN}"
+          package_error="/tmp/package-api-error.txt"
+          : > "$package_error"
+
+          if packages="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages?package_type=container&per_page=100" 2>"$package_error")"; then
+            if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$packages"; then
+              echo "::warning::GitHub Packages API returned an unexpected response; package announcements were skipped."
+              packages='[]'
+            fi
+          else
+            echo "::warning::GitHub Packages sync is unavailable with the current token; Release, repository and digest publishing remain active. Configure ORG_PACKAGE_TOKEN with read access to organization packages to enable package announcements."
+            packages='[]'
+          fi
+
+          while read -r package; do
+            [ -n "$package" ] || continue
             package_name="$(jq -r '.name' <<<"$package")"
             encoded="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$package_name")"
-            versions="$(gh api "/orgs/$ORG_NAME/packages/container/$encoded/versions?per_page=5" 2>/dev/null || echo '[]')"
+
+            versions_error="/tmp/package-versions-error.txt"
+            : > "$versions_error"
+            if versions="$(GH_TOKEN="$package_token" gh api "/orgs/$ORG_NAME/packages/container/$encoded/versions?per_page=5" 2>"$versions_error")"; then
+              versions="$(json_array_or_empty "$versions")"
+            else
+              echo "::warning::Unable to read versions for package $package_name; skipping it."
+              continue
+            fi
+
             if [ "$BOOTSTRAP" = "true" ]; then
               versions="$(jq '.[0:1]' <<<"$versions")"
             fi
 
-            jq -c '.[]?' <<<"$versions" | while read -r version; do
+            while read -r version; do
+              [ -n "$version" ] || continue
               created="$(jq -r '.created_at' <<<"$version")"
               created_epoch="$(date -u -d "$created" +%s)"
               if [ "$BOOTSTRAP" != "true" ] && [ "$created_epoch" -lt "$cutoff_epoch" ]; then
@@ -259,8 +289,8 @@ jobs:
           该通知由 LingXi 社区发布器从 GitHub Packages 自动同步。
           EOF
               publish_once "$marker" "[Package] $package_name ${tags:+— $tags}" /tmp/item.md
-            done
-          done
+            done < <(jq -c '.[]' <<<"$versions")
+          done < <(jq -c '.[]' <<<"$packages")
 
   digest:
     name: Publish weekly development digest
@@ -279,7 +309,7 @@ jobs:
 
           context="$(
             gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}}}}' \
+              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id discussionCategories(first:50){nodes{id slug}} discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
               -F owner="$ORG_NAME" -F name="$SOURCE_REPO"
           )"
           repo_id="$(jq -r '.data.repository.id // empty' <<<"$context")"
@@ -299,14 +329,10 @@ jobs:
             title="[Progress] $week — LingXi Weekly Development Digest"
           fi
 
-          existing="$(
-            gh api graphql \
-              -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{body}}}}' \
-              -F owner="$ORG_NAME" -F name="$SOURCE_REPO" \
-              --jq '.data.repository.discussions.nodes[]?.body' \
-              | grep -F "$marker" || true
-          )"
-          [ -z "$existing" ] || { echo "Digest already exists."; exit 0; }
+          if jq -r '.data.repository.discussions.nodes[]?.body' <<<"$context" | grep -Fq "$marker"; then
+            echo "Digest already exists."
+            exit 0
+          fi
 
           query="org:$ORG_NAME is:pr is:merged merged:>=$since"
           prs="$(gh api --method GET /search/issues -f q="$query" -f per_page=100 --jq '.items')"
@@ -323,21 +349,17 @@ jobs:
 
           count="$(jq 'length' <<<"$prs")"
           if [ "$count" -eq 0 ]; then
-            echo "- 本周期没有检索到已合并 PR。" >> /tmp/body.md
+            echo "- 本周期暂无已合并 Pull Request。" >> /tmp/body.md
           else
-            jq -r '.[] | "- [\(.title)](\(.html_url)) — @\(.user.login)"' <<<"$prs" >> /tmp/body.md
+            jq -r '.[] | "- [" + .repository_url + "/pull/" + ((.pull_request.url | split("/") | last)) + "](" + .html_url + ") — " + .title + " by @" + .user.login' <<<"$prs" \
+              | sed -E 's#\[https://api.github.com/repos/([^/]+/[^/]+)/pull/([0-9]+)\]#\[\1#\2\]#' \
+              >> /tmp/body.md
           fi
 
           cat >> /tmp/body.md <<EOF
 
-          ## Continue building
-
-          - 提需求：**Ideas and Requests**
-          - 参加任务：**Build Lab → Weekly Missions**
-          - 提交成果：**Build Lab → Submissions**
-          - 阅读或分享技术文章：**Engineering Notes**
-
-          > 本文由 GitHub Actions 自动生成。涉及具体兼容性、迁移和发布内容时，请以对应 Release、Issue 和 PR 为准。
+          ---
+          Generated from merged Pull Requests since **$since**.
           EOF
 
           body="$(cat /tmp/body.md)"
