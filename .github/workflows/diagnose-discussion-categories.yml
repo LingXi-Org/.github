@@ -1,0 +1,27 @@
+name: 诊断讨论分类
+
+on:
+  push:
+    branches:
+      - diag/discussion-category-slugs
+
+permissions:
+  contents: read
+  discussions: read
+
+jobs:
+  inspect:
+    name: 输出分类名称与 slug
+    runs-on: ubuntu-latest
+    steps:
+      - name: 查询真实分类数据
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api graphql \
+            -f query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussionCategories(first:50){nodes{name slug description isAnswerable}}}}' \
+            -F owner='LingXi-Org' \
+            -F name='.github' \
+            --jq '.data.repository.discussionCategories.nodes'
